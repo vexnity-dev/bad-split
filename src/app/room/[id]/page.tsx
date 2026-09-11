@@ -134,6 +134,28 @@ export default function RoomPage() {
           setHostNotes(roomData.host_notes);
         }
 
+        // Save to recent rooms in localStorage
+        try {
+          const recentStr = localStorage.getItem("badsplit_recent_rooms");
+          const recents = recentStr ? JSON.parse(recentStr) : [];
+          const currentItem = {
+            id: roomData.id,
+            title: roomData.title,
+            per_person_fee: roomData.per_person_fee,
+            total_fee: roomData.total_fee,
+            visited_at: new Date().toISOString(),
+          };
+          const filtered = Array.isArray(recents)
+            ? recents.filter((r: { id?: string }) => r && r.id !== roomData.id)
+            : [];
+          localStorage.setItem(
+            "badsplit_recent_rooms",
+            JSON.stringify([currentItem, ...filtered].slice(0, 8))
+          );
+        } catch (storageErr) {
+          console.warn("Recent rooms save error:", storageErr);
+        }
+
         // 2. Fetch Members
         const { data: membersData, error: membersError } = await supabase
           .from("members")
