@@ -5,6 +5,8 @@ export interface Room {
   shuttle_fee: number;
   total_fee: number;
   qr_url: string | null;
+  target_players?: number | null;
+  per_person_fee?: number | null;
   created_at?: string;
 }
 
@@ -14,6 +16,7 @@ export interface Member {
   name: string;
   amount: number;
   is_paid: boolean;
+  slip_url?: string | null;
   created_at?: string;
 }
 
@@ -23,6 +26,8 @@ export interface CreateRoomInput {
   shuttle_fee: number;
   total_fee: number;
   qr_url: string | null;
+  target_players?: number | null;
+  per_person_fee?: number | null;
 }
 
 export interface CreateMemberInput {
@@ -30,4 +35,5 @@ export interface CreateMemberInput {
   name: string;
   amount: number;
   is_paid?: boolean;
+  slip_url?: string | null;
 }

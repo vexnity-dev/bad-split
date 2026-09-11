@@ -4,27 +4,26 @@
 import React, { useState, useId } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Plus,
-  Trash2,
   Upload,
-  QrCode,
-  Users,
   AlertCircle,
   Sparkles,
-  ClipboardPaste,
   ArrowRight,
   Loader2,
   X,
-  FileText,
   CreditCard,
+  Calculator,
+  Trash2,
+  Zap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ShuttleIcon } from "@/components/ShuttleIcon";
-
-interface PlayerInput {
-  id: string;
-  name: string;
-}
+import {
+  ShinchanAvatar,
+  ShiroAvatar,
+  ActionKamenAvatar,
+  ChocobiStar,
+} from "@/components/NoharaAvatars";
+import { ShinchanFloatingBackground } from "@/components/ShinchanFloatingBackground";
 
 export default function CreateRoomPage() {
   const router = useRouter();
@@ -33,26 +32,19 @@ export default function CreateRoomPage() {
   // Form states
   const [title, setTitle] = useState("");
   const [courtFee, setCourtFee] = useState<number | "">("");
-  
+
   // Shuttle fee state & calculation mode
   const [shuttleMode, setShuttleMode] = useState<"total" | "units">("total");
   const [shuttleTotal, setShuttleTotal] = useState<number | "">("");
   const [pricePerShuttle, setPricePerShuttle] = useState<number | "">("");
   const [shuttleCount, setShuttleCount] = useState<number | "">("");
 
-  // Players list
-  const [players, setPlayers] = useState<PlayerInput[]>([
-    { id: "1", name: "" },
-    { id: "2", name: "" },
-    { id: "3", name: "" },
-    { id: "4", name: "" },
-  ]);
+  // Split calculation mode: by player count or direct per-person fee
+  const [splitMode, setSplitMode] = useState<"players" | "direct">("players");
+  const [estimatedPlayers, setEstimatedPlayers] = useState<number | "">(6);
+  const [directPerPersonFee, setDirectPerPersonFee] = useState<number | "">("");
 
-  // Bulk paste modal
-  const [showBulkPaste, setShowBulkPaste] = useState(false);
-  const [bulkText, setBulkText] = useState("");
-
-  // QR Code upload
+  // Host PromptPay QR Code upload
   const [qrFile, setQrFile] = useState<File | null>(null);
   const [qrPreview, setQrPreview] = useState<string | null>(null);
 
@@ -62,7 +54,7 @@ export default function CreateRoomPage() {
 
   // Calculated values
   const parsedCourtFee = typeof courtFee === "number" ? courtFee : 0;
-  
+
   const parsedShuttleFee =
     shuttleMode === "total"
       ? typeof shuttleTotal === "number"
@@ -73,59 +65,20 @@ export default function CreateRoomPage() {
 
   const totalFee = parsedCourtFee + parsedShuttleFee;
 
-  const validPlayers = players
-    .map((p) => p.name.trim())
-    .filter((name) => name.length > 0);
-  
-  const playerCount = validPlayers.length;
-  const perPersonCost = playerCount > 0 ? totalFee / playerCount : 0;
-  // Rounded for clean display if decimal
+  // Calculate per person amount and target players
+  let calculatedPerPerson = 0;
+  let targetPlayersCount = 0;
+
+  if (splitMode === "players") {
+    targetPlayersCount = typeof estimatedPlayers === "number" && estimatedPlayers > 0 ? estimatedPlayers : 0;
+    calculatedPerPerson = targetPlayersCount > 0 ? Math.round((totalFee / targetPlayersCount) * 100) / 100 : 0;
+  } else {
+    calculatedPerPerson = typeof directPerPersonFee === "number" && directPerPersonFee > 0 ? directPerPersonFee : 0;
+    targetPlayersCount = calculatedPerPerson > 0 ? Math.ceil(totalFee / calculatedPerPerson) : 0;
+  }
+
   const formattedPerPerson =
-    perPersonCost % 1 === 0 ? perPersonCost.toFixed(0) : perPersonCost.toFixed(2);
-
-  // Player handlers
-  const handleAddPlayer = () => {
-    setPlayers((prev) => [...prev, { id: crypto.randomUUID(), name: "" }]);
-  };
-
-  const handleRemovePlayer = (id: string) => {
-    if (players.length <= 1) return;
-    setPlayers((prev) => prev.filter((p) => p.id !== id));
-  };
-
-  const handlePlayerNameChange = (id: string, name: string) => {
-    setPlayers((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, name } : p))
-    );
-  };
-
-  const handleApplyBulkPaste = () => {
-    if (!bulkText.trim()) {
-      setShowBulkPaste(false);
-      return;
-    }
-
-    // Parse lines, strip common numbering like "1.", "1)", "-", "•"
-    const parsedNames = bulkText
-      .split(/\r?\n|,/)
-      .map((line) =>
-        line
-          .replace(/^[\s\d]+[.)\-•]\s*/, "") // remove leading "1.", "2)", "• "
-          .trim()
-      )
-      .filter((name) => name.length > 0);
-
-    if (parsedNames.length > 0) {
-      setPlayers(
-        parsedNames.map((name) => ({
-          id: crypto.randomUUID(),
-          name,
-        }))
-      );
-    }
-    setBulkText("");
-    setShowBulkPaste(false);
-  };
+    calculatedPerPerson % 1 === 0 ? calculatedPerPerson.toFixed(0) : calculatedPerPerson.toFixed(2);
 
   // QR file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,7 +104,7 @@ export default function CreateRoomPage() {
 
     try {
       const fileExt = qrFile.name.split(".").pop() || "png";
-      const cleanFileName = `qr_${Date.now()}_${Math.random()
+      const cleanFileName = `host_qr_${Date.now()}_${Math.random()
         .toString(36)
         .substring(2, 8)}.${fileExt}`;
       const filePath = `uploads/${cleanFileName}`;
@@ -164,8 +117,7 @@ export default function CreateRoomPage() {
         });
 
       if (uploadError) {
-        console.warn("QR upload notice:", uploadError.message);
-        // If storage bucket isn't configured, we'll continue gracefully
+        console.warn("QR upload warning:", uploadError.message);
         return null;
       }
 
@@ -180,18 +132,18 @@ export default function CreateRoomPage() {
     }
   };
 
-  // Submit form
+  // Submit form to create room
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!title.trim()) {
-      setErrorMessage("กรุณากรอกชื่อห้องหรือชื่อก๊วน");
+      setErrorMessage("กรุณากรอกชื่อห้องหรือชื่อก๊วนด้วยนะฮะ!");
       return;
     }
 
-    if (validPlayers.length === 0) {
-      setErrorMessage("กรุณาใส่ชื่อผู้เล่นอย่างน้อย 1 คน");
+    if (calculatedPerPerson <= 0 && totalFee <= 0) {
+      setErrorMessage("กรุณาระบุค่าคอร์ท ค่าลูกแบด หรือยอดเงินต่อคนก่อนนะฮะ");
       return;
     }
 
@@ -204,42 +156,60 @@ export default function CreateRoomPage() {
         qrUrl = await uploadQrCode();
       }
 
-      // 2. Insert Room
-      const { data: roomData, error: roomError } = await supabase
+      // Title encoding helper so room page always knows target players count
+      const formattedTitle =
+        targetPlayersCount > 0 && !title.includes("คน")
+          ? `${title.trim()} [เป้าหมาย ${targetPlayersCount} คน]`
+          : title.trim();
+
+      // Attempt insert with target_players & per_person_fee if supported by table
+      const fullPayload: Record<string, unknown> = {
+        title: formattedTitle,
+        court_fee: parsedCourtFee,
+        shuttle_fee: parsedShuttleFee,
+        total_fee: totalFee,
+        qr_url: qrUrl,
+        target_players: targetPlayersCount > 0 ? targetPlayersCount : null,
+        per_person_fee: calculatedPerPerson > 0 ? calculatedPerPerson : null,
+      };
+
+      let { data: roomData, error: roomError } = await supabase
         .from("rooms")
-        .insert([
-          {
-            title: title.trim(),
-            court_fee: parsedCourtFee,
-            shuttle_fee: parsedShuttleFee,
-            total_fee: totalFee,
-            qr_url: qrUrl,
-          },
-        ])
+        .insert([fullPayload])
         .select()
         .single();
+
+      // If columns target_players or per_person_fee don't exist in Supabase schema, retry with standard columns
+      if (
+        roomError &&
+        (roomError.message?.includes("target_players") ||
+          roomError.message?.includes("per_person_fee") ||
+          roomError.code === "PGRST204")
+      ) {
+        console.warn("Retrying with base room columns:", roomError.message);
+        const basePayload = {
+          title: formattedTitle,
+          court_fee: parsedCourtFee,
+          shuttle_fee: parsedShuttleFee,
+          total_fee: totalFee,
+          qr_url: qrUrl,
+        };
+
+        const retry = await supabase
+          .from("rooms")
+          .insert([basePayload])
+          .select()
+          .single();
+
+        roomData = retry.data;
+        roomError = retry.error;
+      }
 
       if (roomError || !roomData) {
         throw new Error(roomError?.message || "ไม่สามารถสร้างห้องได้ กรุณาลองใหม่อีกครั้ง");
       }
 
-      // 3. Insert Members
-      const membersPayload = validPlayers.map((name) => ({
-        room_id: roomData.id,
-        name,
-        amount: Math.round(perPersonCost * 100) / 100, // round to 2 decimal places
-        is_paid: false,
-      }));
-
-      const { error: membersError } = await supabase
-        .from("members")
-        .insert(membersPayload);
-
-      if (membersError) {
-        throw new Error(membersError.message);
-      }
-
-      // 4. Redirect to Room Dashboard
+      // Redirect to Room Details Page
       router.push(`/room/${roomData.id}`);
     } catch (err) {
       console.error("Error creating room:", err);
@@ -253,39 +223,45 @@ export default function CreateRoomPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center py-6 px-4 sm:px-6">
-      {/* Background Glow */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-emerald-500/15 blur-[120px] rounded-full" />
-        <div className="absolute top-96 right-10 w-[300px] h-[300px] bg-emerald-600/10 blur-[100px] rounded-full" />
-      </div>
+    <div className="min-h-screen relative flex flex-col items-center py-6 px-4 sm:px-6">
+      {/* Floating Nohara Family Ambient Background */}
+      <ShinchanFloatingBackground />
 
-      <div className="w-full max-w-xl">
-        {/* App Header */}
+      <div className="w-full max-w-xl relative z-10">
+        {/* Comic App Header */}
         <header className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-3">
-            <ShuttleIcon className="w-4 h-4 text-emerald-400" />
-            <span>Badminton Expense Split</span>
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FDD835] border-3 border-slate-900 text-slate-950 text-xs font-black uppercase tracking-wider mb-3 shadow-[3px_3px_0px_#0f172a] transform -rotate-1">
+            <ShinchanAvatar className="w-5 h-5 -ml-1" />
+            <span>Bad-Split x Crayon Shin-chan</span>
+            <ChocobiStar className="w-4 h-4 text-slate-900" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center justify-center gap-2">
-            สร้างห้องหารค่าแบด
+
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight flex items-center justify-center gap-2">
+            <span>ก๊วนนี้ใครจ่าย!</span>
+            <span className="text-[#E53935] drop-shadow-[2px_2px_0px_#FDD835]">🏸</span>
           </h1>
-          <p className="text-slate-400 text-sm mt-1.5">
-            หารค่าคอร์ท ค่าลูกแบด พร้อมสรุปยอดและส่งลิงก์เช็คสถานะให้เพื่อนในก๊วน
-          </p>
+
+          {/* Comic Speech Bubble */}
+          <div className="mt-3 relative inline-block max-w-md bg-white border-3 border-slate-900 rounded-2xl px-4 py-2.5 shadow-[4px_4px_0px_#0f172a]">
+            <p className="text-xs sm:text-sm font-bold text-slate-800 flex items-center justify-center gap-1.5">
+              <span>วู้ววว! ตั้งค่ายอดเงินก๊วนแบด ใครไม่โอนระวังโดนแม่มิซาเอะเขกหัวนะฮะ!</span>
+            </p>
+            {/* Bubble arrow pointing up */}
+            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-t-3 border-l-3 border-slate-900 transform rotate-45" />
+          </div>
         </header>
 
         {/* Error Alert */}
         {errorMessage && (
-          <div className="mb-5 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-3 animate-in fade-in">
-            <AlertCircle className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
+          <div className="mb-5 p-4 rounded-2xl bg-[#FFEBEE] border-3 border-[#E53935] text-[#C62828] text-xs sm:text-sm font-bold flex items-start gap-3 shadow-[4px_4px_0px_#0f172a] animate-in fade-in">
+            <AlertCircle className="w-5 h-5 shrink-0 text-[#E53935] mt-0.5" />
             <div className="flex-1">
-              <span className="font-medium">เกิดข้อผิดพลาด:</span> {errorMessage}
+              <span className="underline">แง้! ข้อผิดพลาด:</span> {errorMessage}
             </div>
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="text-slate-400 hover:text-white"
+              className="text-slate-600 hover:text-black"
             >
               <X className="w-4 h-4" />
             </button>
@@ -295,42 +271,52 @@ export default function CreateRoomPage() {
         {/* Main Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Section 1: Room Details */}
-          <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-5 border border-slate-700/60 shadow-xl shadow-slate-950/40">
-            <div className="flex items-center gap-2 mb-3 text-slate-200 font-semibold text-base">
-              <FileText className="w-4 h-4 text-emerald-400" />
-              <span>ข้อมูลห้อง / ก๊วนแบด</span>
+          <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="w-7 h-7 rounded-xl bg-[#E53935] flex items-center justify-center text-white border-2 border-slate-900">
+                  <ShuttleIcon className="w-4 h-4" />
+                </div>
+                <span>ชื่อห้องก๊วนแบด</span>
+              </div>
+              <span className="text-[11px] font-black bg-[#FDD835] text-slate-900 px-2.5 py-0.5 rounded-full border-2 border-slate-900">
+                ขั้นตอนที่ 1
+              </span>
             </div>
+
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                ชื่อห้อง / วันที่เล่น <span className="text-emerald-400">*</span>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                ตั้งชื่อก๊วน / วันเวลาเล่น <span className="text-[#E53935]">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="เช่น ก๊วนแบดวันศุกร์ สนาม Winner คอร์ท 3-4"
-                className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
+                placeholder="เช่น ก๊วนชินจังวันศุกร์ สนาม Winner คอร์ท 3-4"
+                className="w-full px-4 py-3 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-bold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
               />
             </div>
           </div>
 
           {/* Section 2: Expense Breakdown */}
-          <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-5 border border-slate-700/60 shadow-xl shadow-slate-950/40 space-y-4">
+          <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-200 font-semibold text-base">
-                <CreditCard className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="w-7 h-7 rounded-xl bg-[#43A047] flex items-center justify-center text-white border-2 border-slate-900">
+                  <CreditCard className="w-4 h-4" />
+                </div>
                 <span>ค่าใช้จ่ายทั้งหมด</span>
               </div>
-              <span className="text-xs text-emerald-400 font-medium">
+              <span className="text-[11px] font-black text-[#2E7D32] bg-[#E8F5E9] border-2 border-[#43A047] px-2 py-0.5 rounded-full">
                 คำนวณอัตโนมัติ
               </span>
             </div>
 
             {/* Court Fee */}
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                ค่าคอร์ท (บาท)
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                ค่าคอร์ทแบดมินตัน (บาท)
               </label>
               <div className="relative">
                 <input
@@ -342,28 +328,28 @@ export default function CreateRoomPage() {
                     setCourtFee(e.target.value === "" ? "" : Number(e.target.value))
                   }
                   placeholder="0"
-                  className="w-full pl-3.5 pr-12 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
+                  className="w-full pl-4 pr-12 py-2.5 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
                 />
-                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
                   ฿
                 </span>
               </div>
             </div>
 
             {/* Shuttle Fee Segmented Selector */}
-            <div className="pt-2 border-t border-slate-700/50">
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-slate-400">
+            <div className="pt-3 border-t-2 border-dashed border-slate-200">
+              <div className="flex items-center justify-between mb-2.5">
+                <label className="text-xs font-bold text-slate-700">
                   ค่าลูกแบดมินตัน
                 </label>
-                <div className="inline-flex p-0.5 bg-slate-900/90 rounded-lg border border-slate-700">
+                <div className="inline-flex p-1 bg-slate-100 rounded-xl border-2 border-slate-900">
                   <button
                     type="button"
                     onClick={() => setShuttleMode("total")}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
                       shuttleMode === "total"
-                        ? "bg-emerald-500 text-slate-950 font-semibold shadow-sm"
-                        : "text-slate-400 hover:text-white"
+                        ? "bg-[#E53935] text-white shadow-[2px_2px_0px_#0f172a] border border-slate-900"
+                        : "text-slate-600 hover:text-black"
                     }`}
                   >
                     ใส่ยอดรวม
@@ -371,13 +357,13 @@ export default function CreateRoomPage() {
                   <button
                     type="button"
                     onClick={() => setShuttleMode("units")}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
                       shuttleMode === "units"
-                        ? "bg-emerald-500 text-slate-950 font-semibold shadow-sm"
-                        : "text-slate-400 hover:text-white"
+                        ? "bg-[#E53935] text-white shadow-[2px_2px_0px_#0f172a] border border-slate-900"
+                        : "text-slate-600 hover:text-black"
                     }`}
                   >
-                    คำนวณตามลูก
+                    คิดตามลูก
                   </button>
                 </div>
               </div>
@@ -395,16 +381,16 @@ export default function CreateRoomPage() {
                       )
                     }
                     placeholder="ยอดรวมค่าลูกแบด (0)"
-                    className="w-full pl-3.5 pr-12 py-2.5 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
+                    className="w-full pl-4 pr-12 py-2.5 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
                   />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
                     ฿
                   </span>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       ราคาต่อลูก (บาท)
                     </label>
                     <input
@@ -418,12 +404,12 @@ export default function CreateRoomPage() {
                         )
                       }
                       placeholder="เช่น 25"
-                      className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
+                      className="w-full px-3 py-2 bg-[#FFFDF0] border-3 border-slate-900 rounded-xl text-slate-950 font-bold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
-                      จำนวนลูกที่ใช้
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      จำนวนลูกที่ตี
                     </label>
                     <input
                       type="number"
@@ -436,13 +422,15 @@ export default function CreateRoomPage() {
                         )
                       }
                       placeholder="เช่น 6"
-                      className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
+                      className="w-full px-3 py-2 bg-[#FFFDF0] border-3 border-slate-900 rounded-xl text-slate-950 font-bold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
                     />
                   </div>
                   {parsedShuttleFee > 0 && (
-                    <div className="col-span-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 flex items-center justify-between">
-                      <span>รวมค่าลูกแบด:</span>
-                      <span className="font-semibold">฿{parsedShuttleFee.toLocaleString()} บาท</span>
+                    <div className="col-span-2 text-xs font-black text-slate-900 bg-[#FFF9C4] px-3.5 py-2 rounded-xl border-2 border-slate-900 flex items-center justify-between">
+                      <span>รวมค่าลูกแบดทั้งหมด:</span>
+                      <span className="text-[#E53935] text-sm font-black">
+                        ฿{parsedShuttleFee.toLocaleString()} บาท
+                      </span>
                     </div>
                   )}
                 </div>
@@ -450,85 +438,145 @@ export default function CreateRoomPage() {
             </div>
           </div>
 
-          {/* Section 3: Players Input */}
-          <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-5 border border-slate-700/60 shadow-xl shadow-slate-950/40 space-y-3.5">
+          {/* Section 3: Split Settings */}
+          <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-3.5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-200 font-semibold text-base">
-                <Users className="w-4 h-4 text-emerald-400" />
-                <span>รายชื่อผู้เล่น ({playerCount} คน)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowBulkPaste(true)}
-                className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-medium py-1 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-all"
-              >
-                <ClipboardPaste className="w-3.5 h-3.5" />
-                <span>วางรายชื่อจาก LINE</span>
-              </button>
-            </div>
-
-            {/* Players List */}
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {players.map((player, index) => (
-                <div key={player.id} className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-slate-900/80 border border-slate-700 flex items-center justify-center text-xs font-semibold text-slate-400 shrink-0">
-                    {index + 1}
-                  </div>
-                  <input
-                    type="text"
-                    value={player.name}
-                    onChange={(e) =>
-                      handlePlayerNameChange(player.id, e.target.value)
-                    }
-                    placeholder={`ชื่อผู้เล่นคนที่ ${index + 1}`}
-                    className="flex-1 px-3 py-2 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500 transition-all text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemovePlayer(player.id)}
-                    disabled={players.length <= 1}
-                    aria-label={`ลบผู้เล่น ${player.name || index + 1}`}
-                    className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+              <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="w-7 h-7 rounded-xl bg-[#FDD835] flex items-center justify-center text-slate-900 border-2 border-slate-900">
+                  <Calculator className="w-4 h-4" />
                 </div>
-              ))}
+                <span>วิธีหารยอดเงิน</span>
+              </div>
+              <div className="inline-flex p-1 bg-slate-100 rounded-xl border-2 border-slate-900">
+                <button
+                  type="button"
+                  onClick={() => setSplitMode("players")}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                    splitMode === "players"
+                      ? "bg-[#FDD835] text-slate-950 shadow-[2px_2px_0px_#0f172a] border border-slate-900"
+                      : "text-slate-600 hover:text-black"
+                  }`}
+                >
+                  ตามจำนวนคน
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMode("direct")}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                    splitMode === "direct"
+                      ? "bg-[#FDD835] text-slate-950 shadow-[2px_2px_0px_#0f172a] border border-slate-900"
+                      : "text-slate-600 hover:text-black"
+                  }`}
+                >
+                  กำหนดยอดต่อคน
+                </button>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddPlayer}
-              className="w-full py-2.5 rounded-xl border border-dashed border-slate-700 hover:border-emerald-500/50 hover:bg-emerald-500/5 text-slate-300 hover:text-emerald-400 text-xs font-medium flex items-center justify-center gap-1.5 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>เพิ่มผู้เล่นทีละคน</span>
-            </button>
+            {splitMode === "players" ? (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  จำนวนผู้เล่นโดยประมาณ (คน)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={estimatedPlayers}
+                    onChange={(e) =>
+                      setEstimatedPlayers(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
+                    placeholder="เช่น 6"
+                    className="w-full pl-4 pr-14 py-2.5 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
+                    คน
+                  </span>
+                </div>
+                <div className="text-[11px] font-bold text-slate-700 mt-2 flex items-center gap-1.5 bg-[#F1F5F9] p-2.5 rounded-xl border border-slate-300">
+                  <ShiroAvatar className="w-4 h-4 shrink-0" />
+                  <span>
+                    ยอดรวม ฿{totalFee} บาท ÷ {targetPlayersCount} คน ={" "}
+                    <strong className="text-[#E53935] font-black text-xs">
+                      ฿{formattedPerPerson} บาท/คน
+                    </strong>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  กำหนดยอดที่ต้องโอนต่อคนโดยตรง (บาท)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={directPerPersonFee}
+                    onChange={(e) =>
+                      setDirectPerPersonFee(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
+                    placeholder="เช่น 100 หรือ 120"
+                    className="w-full pl-4 pr-16 py-2.5 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
+                    ฿ / คน
+                  </span>
+                </div>
+                <div className="text-[11px] font-bold text-slate-700 mt-2 flex items-center gap-1.5 bg-[#F1F5F9] p-2.5 rounded-xl border border-slate-300">
+                  <ShiroAvatar className="w-4 h-4 shrink-0" />
+                  <span>
+                    สมาชิกจะเห็นยอดโอนคนละ{" "}
+                    <strong className="text-[#E53935] font-black">
+                      ฿{formattedPerPerson} บาท
+                    </strong>
+                    {totalFee > 0 && targetPlayersCount > 0 && (
+                      <span> (ต้องการ {targetPlayersCount} คน ถึงจะครบ)</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Section 4: QR Code Upload */}
-          <div className="bg-slate-800/80 backdrop-blur-md rounded-2xl p-5 border border-slate-700/60 shadow-xl shadow-slate-950/40">
+          {/* Section 4: Action Kamen Card Frame for Host PromptPay QR */}
+          <div className="bg-gradient-to-br from-[#E8F5E9] via-white to-[#C8E6C9] rounded-3xl p-5 border-4 border-[#43A047] shadow-[5px_5px_0px_0px_#0f172a] relative overflow-hidden">
+            {/* Action Kamen Badge Watermark */}
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 text-slate-200 font-semibold text-base">
-                <QrCode className="w-4 h-4 text-emerald-400" />
-                <span>QR Code พร้อมเพย์ / บัญชีรับเงิน</span>
+              <div className="flex items-center gap-2">
+                <ActionKamenAvatar className="w-7 h-7" />
+                <span className="text-slate-950 font-black text-base">
+                  การ์ดพร้อมเพย์หน้ากากแอคชั่น!
+                </span>
               </div>
-              <span className="text-[11px] text-slate-400">(ไม่บังคับ)</span>
+              <span className="text-[11px] font-black text-white bg-[#43A047] border-2 border-slate-900 px-2.5 py-0.5 rounded-full shadow-[2px_2px_0px_#0f172a]">
+                QR หัวห้อง
+              </span>
             </div>
+
+            <p className="text-xs font-bold text-slate-700 mb-3">
+              อัปโหลดรูป QR พร้อมเพย์ของหัวห้อง เพื่อให้เพื่อนในก๊วนสแกนจ่ายได้ทันที
+            </p>
 
             {!qrPreview ? (
               <label
                 htmlFor={fileInputId}
-                className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-emerald-500/60 rounded-xl p-5 cursor-pointer bg-slate-900/50 hover:bg-slate-900/90 transition-all group"
+                className="flex flex-col items-center justify-center border-3 border-dashed border-[#43A047] hover:border-slate-900 rounded-2xl p-5 cursor-pointer bg-white hover:bg-[#F1F8E9] transition-all group shadow-[3px_3px_0px_#0f172a]"
               >
-                <div className="w-11 h-11 rounded-full bg-slate-800 group-hover:bg-emerald-500/10 flex items-center justify-center text-slate-400 group-hover:text-emerald-400 transition-all mb-2">
-                  <Upload className="w-5 h-5" />
+                <div className="w-12 h-12 rounded-2xl bg-[#E8F5E9] group-hover:bg-[#C8E6C9] border-2 border-slate-900 flex items-center justify-center text-[#2E7D32] transition-all mb-2 shadow-[2px_2px_0px_#0f172a]">
+                  <Upload className="w-6 h-6" />
                 </div>
-                <p className="text-xs font-medium text-slate-300 group-hover:text-white">
-                  กดเพื่ออัปโหลดรูปภาพ QR Code พร้อมเพย์
+                <p className="text-xs font-black text-slate-900">
+                  แตะเพื่ออัปโหลดรูป QR Code พร้อมเพย์
                 </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  รองรับไฟล์ PNG, JPG, WebP
+                <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                  รองรับ PNG, JPG, WEBP (เพื่อนสแกนปุ๊บ โอนปั๊บ!)
                 </p>
                 <input
                   id={fileInputId}
@@ -539,139 +587,92 @@ export default function CreateRoomPage() {
                 />
               </label>
             ) : (
-              <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-900/90 border border-slate-700">
-                <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
-                  {/* Preview image */}
+              <div className="flex items-center gap-4 p-3.5 rounded-2xl bg-white border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a]">
+                <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-100 shrink-0 border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
                   <img
                     src={qrPreview}
-                    alt="QR Preview"
+                    alt="Host QR Preview"
                     className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-white truncate">
-                    {qrFile?.name || "QR Code Image"}
+                  <p className="text-xs font-black text-slate-900 truncate">
+                    {qrFile?.name || "Host PromptPay QR"}
                   </p>
-                  <p className="text-[11px] text-emerald-400 flex items-center gap-1 mt-0.5">
-                    <Sparkles className="w-3 h-3" />
-                    พร้อมอัปโหลดเข้าคลาวด์
+                  <p className="text-[11px] font-bold text-[#2E7D32] flex items-center gap-1 mt-0.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    พร้อมให้สแกนจ่ายแล้วจ้า!
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleRemoveQr}
                   aria-label="ลบรูป QR Code"
-                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                  className="p-2 text-slate-500 hover:text-[#E53935] hover:bg-[#FFEBEE] rounded-xl border border-transparent hover:border-slate-900 transition-all"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-5 h-5" />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Section 5: Real-time Live Summary Card */}
-          <div className="bg-gradient-to-br from-emerald-600/90 to-teal-700/90 text-white rounded-2xl p-5 shadow-2xl shadow-emerald-950/50 border border-emerald-400/30">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs uppercase tracking-wider text-emerald-100/80 font-semibold flex items-center gap-1.5">
+          {/* Section 5: Real-time Chocobi Snack Box Summary Card */}
+          <div className="bg-[#43A047] rounded-3xl p-5 border-4 border-slate-900 shadow-[6px_6px_0px_0px_#0f172a] text-white relative overflow-hidden">
+            {/* Chocobi Pink Star corner accent */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider bg-slate-900 text-[#FDD835] px-3 py-1 rounded-full border border-yellow-300">
                 <Sparkles className="w-3.5 h-3.5" />
-                สรุปยอดคำนวณเรียลไทม์
-              </span>
-              <span className="text-xs bg-emerald-900/40 text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-400/20">
-                {playerCount} คน
-              </span>
+                <span>สรุปยอดกล่องช็อกโกบี</span>
+              </div>
+              {targetPlayersCount > 0 && (
+                <span className="text-xs font-black bg-[#FDD835] text-slate-950 px-3 py-1 rounded-full border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
+                  เป้าหมาย {targetPlayersCount} คน
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3 my-3">
-              <div className="bg-slate-950/30 rounded-xl p-3 border border-emerald-300/20">
-                <div className="text-[11px] text-emerald-100/70">ยอดรวมทั้งหมด</div>
-                <div className="text-xl font-bold tracking-tight text-white mt-0.5">
+              <div className="bg-white rounded-2xl p-3.5 border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] text-slate-950">
+                <div className="text-[11px] font-bold text-slate-600">ยอดรวมทั้งหมด</div>
+                <div className="text-2xl font-black tracking-tight text-slate-950 mt-0.5">
                   ฿{totalFee.toLocaleString()}
                 </div>
-                <div className="text-[10px] text-emerald-200/80 mt-1">
+                <div className="text-[10px] font-bold text-slate-500 mt-1">
                   คอร์ท ฿{parsedCourtFee} + ลูก ฿{parsedShuttleFee}
                 </div>
               </div>
 
-              <div className="bg-slate-950/30 rounded-xl p-3 border border-emerald-300/20">
-                <div className="text-[11px] text-emerald-100/70">ยอดเฉลี่ยต่อคน</div>
-                <div className="text-xl font-bold tracking-tight text-emerald-200 mt-0.5">
+              <div className="bg-[#FFF9C4] rounded-2xl p-3.5 border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] text-slate-950">
+                <div className="text-[11px] font-bold text-slate-700">ยอดโอนต่อคน</div>
+                <div className="text-2xl font-black tracking-tight text-[#E53935] mt-0.5">
                   ฿{formattedPerPerson}
                 </div>
-                <div className="text-[10px] text-emerald-200/80 mt-1">
-                  {playerCount > 0
-                    ? `หาร ${playerCount} คน`
-                    : "กรุณาใส่ชื่อผู้เล่น"}
+                <div className="text-[10px] font-bold text-slate-600 mt-1">
+                  {targetPlayersCount > 0 ? `หาร ${targetPlayersCount} คน` : "กำหนดยอดต่อคน"}
                 </div>
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* Tactile 3D Action Submit Button */}
             <button
               type="submit"
-              disabled={isSubmitting || playerCount === 0}
-              className="w-full mt-2 py-3.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-bold text-sm shadow-lg shadow-black/20 hover:shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+              disabled={isSubmitting || calculatedPerPerson <= 0}
+              className="w-full mt-3 py-4 px-5 rounded-2xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-base sm:text-lg border-3 border-slate-900 shadow-[4px_4px_0px_#0f172a] hover:shadow-[5px_5px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-900" />
-                  <span>กำลังสร้างห้องและอัปโหลด...</span>
+                  <Loader2 className="w-5 h-5 animate-spin text-[#FDD835]" />
+                  <span>กำลังสร้างห้อง... รอก่อนนะฮะ!</span>
                 </>
               ) : (
                 <>
-                  <span>สร้างห้องและรับลิงก์ชำระเงิน</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>สร้างห้องก๊วนแบดเลยฮะ!</span>
+                  <ArrowRight className="w-5 h-5 stroke-[3]" />
                 </>
               )}
             </button>
           </div>
         </form>
-
-        {/* Bulk Paste Modal */}
-        {showBulkPaste && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <ClipboardPaste className="w-4 h-4 text-emerald-400" />
-                  <span>วางรายชื่อหลายคนพร้อมกัน</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowBulkPaste(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-xs text-slate-400">
-                สามารถคัดลอกจากโพลใน LINE หรือรายชื่อที่คั่นด้วยเครื่องหมายจุลภาค (,) หรือขึ้นบรรทัดใหม่ ระบบจะแยกชื่อให้อัตโนมัติ
-              </p>
-              <textarea
-                rows={6}
-                value={bulkText}
-                onChange={(e) => setBulkText(e.target.value)}
-                placeholder={"1. บอย\n2. แนน\n3. โจ้\n4. บอส\n5. มายด์"}
-                className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
-              />
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowBulkPaste(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyBulkPaste}
-                  className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl shadow transition-all"
-                >
-                  นำเข้ารายชื่อ
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
