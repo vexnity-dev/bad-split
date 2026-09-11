@@ -41,6 +41,7 @@ import {
   ChocobiStar,
 } from "@/components/NoharaAvatars";
 import { ShinchanFloatingBackground } from "@/components/ShinchanFloatingBackground";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function RoomPage() {
   const params = useParams();
@@ -414,9 +415,9 @@ export default function RoomPage() {
   // Loading State
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#FEF9E7] text-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-[#FEF9E7] dark:bg-[#0d131f] text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center p-4">
         <div className="w-14 h-14 rounded-full border-4 border-[#FDD835] border-t-[#E53935] animate-spin mb-4" />
-        <div className="bg-white border-3 border-slate-900 rounded-2xl px-4 py-2 shadow-[4px_4px_0px_#0f172a] text-sm font-black animate-pulse">
+        <div className="bg-white dark:bg-[#1a2234] border-3 border-slate-900 dark:border-slate-700 rounded-2xl px-4 py-2 shadow-[4px_4px_0px_#0f172a] dark:shadow-[4px_4px_0px_#000] text-sm font-black text-slate-900 dark:text-white animate-pulse">
           กำลังค้นหาข้อมูลก๊วนแบด... รอก่อนนะฮะ! 🏸
         </div>
       </div>
@@ -426,13 +427,13 @@ export default function RoomPage() {
   // Error / Not Found State
   if (error || !room) {
     return (
-      <div className="min-h-screen bg-[#FEF9E7] text-slate-900 flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white border-4 border-slate-900 rounded-3xl p-6 text-center space-y-4 shadow-[6px_6px_0px_0px_#0f172a]">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#FFEBEE] border-3 border-[#E53935] flex items-center justify-center text-[#E53935] shadow-[3px_3px_0px_#0f172a]">
+      <div className="min-h-screen bg-[#FEF9E7] dark:bg-[#0d131f] text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white dark:bg-[#1a2234] border-4 border-slate-900 dark:border-slate-700 rounded-3xl p-6 text-center space-y-4 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000]">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#FFEBEE] dark:bg-[#3b1219] border-3 border-[#E53935] flex items-center justify-center text-[#E53935] shadow-[3px_3px_0px_#0f172a] dark:shadow-none">
             <AlertCircle className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-black text-slate-950">แง้! ไม่พบข้อมูลห้องนี้</h2>
-          <p className="text-slate-600 text-xs font-bold">
+          <h2 className="text-xl font-black text-slate-950 dark:text-white">แง้! ไม่พบข้อมูลห้องนี้</h2>
+          <p className="text-slate-600 dark:text-slate-300 text-xs font-bold">
             {error || "ห้องที่คุณกำลังค้นหาอาจถูกลบหรือไม่มีอยู่ในระบบฮะ"}
           </p>
           <div className="pt-2">
@@ -455,31 +456,35 @@ export default function RoomPage() {
       <ShinchanFloatingBackground />
 
       <div className="w-full max-w-xl space-y-5 relative z-10">
-        {/* Navigation Bar */}
-        <div className="flex items-center justify-between">
+        {/* Navigation Bar with Theme Toggle */}
+        <div className="flex items-center justify-between gap-2">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 bg-white px-3.5 py-2 rounded-xl border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] hover:bg-[#FFF9C4] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white bg-white dark:bg-[#1a2234] px-3.5 py-2 rounded-xl border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-[2px_2px_0px_#000] hover:bg-[#FFF9C4] dark:hover:bg-slate-800 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
           >
             <ArrowLeft className="w-3.5 h-3.5 stroke-[3]" />
             <span>สร้างห้องใหม่</span>
           </Link>
 
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 bg-white px-3.5 py-2 rounded-xl border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] hover:bg-[#FFF9C4] transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#E53935]" : ""}`}
-            />
-            <span>รีเฟรชข้อมูล</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white bg-white dark:bg-[#1a2234] px-3.5 py-2 rounded-xl border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-[2px_2px_0px_#000] hover:bg-[#FFF9C4] dark:hover:bg-slate-800 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#E53935]" : ""}`}
+              />
+              <span>รีเฟรช</span>
+            </button>
+          </div>
         </div>
 
         {/* Room Header Comic Card */}
-        <div className="bg-white rounded-3xl p-5 border-4 border-slate-900 shadow-[6px_6px_0px_0px_#0f172a] relative overflow-hidden">
+        <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] relative overflow-hidden">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -488,16 +493,16 @@ export default function RoomPage() {
                   <span>ก๊วนแบดมินตัน</span>
                 </div>
                 {targetPlayers > 0 && (
-                  <span className="text-xs font-black text-white bg-[#E53935] border-2 border-slate-900 px-3 py-1 rounded-full shadow-[2px_2px_0px_#0f172a]">
+                  <span className="text-xs font-black text-white bg-[#E53935] border-2 border-slate-900 px-3 py-1 rounded-full shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                     เป้าหมาย {targetPlayers} คน
                   </span>
                 )}
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-950 tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-950 dark:text-white tracking-tight">
                 {cleanTitle}
               </h1>
               {room.created_at && (
-                <div className="flex items-center gap-1.5 text-slate-500 font-bold text-xs mt-1.5">
+                <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-bold text-xs mt-1.5">
                   <Clock className="w-3.5 h-3.5" />
                   <span>
                     สร้างเมื่อ{" "}
@@ -513,22 +518,22 @@ export default function RoomPage() {
           </div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-3 gap-2.5 mt-5 pt-4 border-t-2 border-dashed border-slate-200 text-center">
-            <div className="bg-[#FFFDF0] rounded-2xl p-2.5 border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
-              <span className="text-[11px] font-bold text-slate-600 block">ยอดรวมห้อง</span>
-              <span className="text-base sm:text-lg font-black text-slate-950 mt-0.5 block">
+          <div className="grid grid-cols-3 gap-2.5 mt-5 pt-4 border-t-2 border-dashed border-slate-200 dark:border-slate-700 text-center">
+            <div className="bg-[#FFFDF0] dark:bg-[#0f172a] rounded-2xl p-2.5 border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">ยอดรวมห้อง</span>
+              <span className="text-base sm:text-lg font-black text-slate-950 dark:text-white mt-0.5 block">
                 ฿{Number(room.total_fee).toLocaleString()}
               </span>
             </div>
-            <div className="bg-[#FFFDF0] rounded-2xl p-2.5 border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
-              <span className="text-[11px] font-bold text-slate-600 block">ค่าคอร์ท</span>
-              <span className="text-base sm:text-lg font-black text-[#2E7D32] mt-0.5 block">
+            <div className="bg-[#FFFDF0] dark:bg-[#0f172a] rounded-2xl p-2.5 border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">ค่าคอร์ท</span>
+              <span className="text-base sm:text-lg font-black text-[#2E7D32] dark:text-emerald-400 mt-0.5 block">
                 ฿{Number(room.court_fee).toLocaleString()}
               </span>
             </div>
-            <div className="bg-[#FFFDF0] rounded-2xl p-2.5 border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
-              <span className="text-[11px] font-bold text-slate-600 block">ค่าลูกแบด</span>
-              <span className="text-base sm:text-lg font-black text-[#E53935] mt-0.5 block">
+            <div className="bg-[#FFFDF0] dark:bg-[#0f172a] rounded-2xl p-2.5 border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">ค่าลูกแบด</span>
+              <span className="text-base sm:text-lg font-black text-[#E53935] dark:text-red-400 mt-0.5 block">
                 ฿{Number(room.shuttle_fee).toLocaleString()}
               </span>
             </div>
@@ -536,14 +541,14 @@ export default function RoomPage() {
         </div>
 
         {/* Comic 2-Tab Switcher */}
-        <div className="grid grid-cols-2 p-1.5 bg-white rounded-2xl border-3 border-slate-900 shadow-[4px_4px_0px_0px_#0f172a]">
+        <div className="grid grid-cols-2 p-1.5 bg-white dark:bg-[#1a2234] rounded-2xl border-3 border-slate-900 dark:border-slate-700 shadow-[4px_4px_0px_0px_#0f172a] dark:shadow-[4px_4px_0px_0px_#000]">
           <button
             type="button"
             onClick={() => setActiveTab("pay")}
-            className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs sm:text-sm font-black transition-all ${
+            className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
               activeTab === "pay"
-                ? "bg-[#E53935] text-[#FDD835] shadow-[2px_2px_0px_#0f172a] border-2 border-slate-900"
-                : "text-slate-600 hover:text-black"
+                ? "bg-[#E53935] text-[#FDD835] shadow-[2px_2px_0px_#0f172a] dark:shadow-none border-2 border-slate-900 dark:border-white/20"
+                : "text-slate-600 dark:text-slate-300 hover:text-black dark:hover:text-white"
             }`}
           >
             <CreditCard className="w-4 h-4 stroke-[2.5]" />
@@ -552,10 +557,10 @@ export default function RoomPage() {
           <button
             type="button"
             onClick={() => setActiveTab("list")}
-            className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs sm:text-sm font-black transition-all ${
+            className={`flex items-center justify-center gap-2 py-3 px-3 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
               activeTab === "list"
-                ? "bg-[#43A047] text-white shadow-[2px_2px_0px_#0f172a] border-2 border-slate-900"
-                : "text-slate-600 hover:text-black"
+                ? "bg-[#43A047] text-white shadow-[2px_2px_0px_#0f172a] dark:shadow-none border-2 border-slate-900 dark:border-white/20"
+                : "text-slate-600 dark:text-slate-300 hover:text-black dark:hover:text-white"
             }`}
           >
             <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
@@ -564,7 +569,7 @@ export default function RoomPage() {
               className={`text-[11px] px-2 py-0.5 rounded-full font-black border border-slate-900 ${
                 activeTab === "list"
                   ? "bg-[#FDD835] text-slate-950"
-                  : "bg-slate-200 text-slate-800"
+                  : "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200"
               }`}
             >
               {paidMembersCount}
@@ -578,13 +583,13 @@ export default function RoomPage() {
         {activeTab === "pay" && (
           <div className="space-y-5 animate-in fade-in duration-200">
             {/* Host QR Code Action Kamen Card Frame */}
-            <div className="bg-gradient-to-br from-[#E8F5E9] via-white to-[#C8E6C9] rounded-3xl p-5 border-4 border-[#43A047] shadow-[6px_6px_0px_0px_#0f172a]">
+            <div className="bg-gradient-to-br from-[#E8F5E9] via-white to-[#C8E6C9] dark:from-[#0f2818] dark:via-[#163a23] dark:to-[#0a1e12] rounded-3xl p-5 border-4 border-[#43A047] dark:border-emerald-400 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#34d399]">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
                   <ActionKamenAvatar className="w-6 h-6" />
                   <span>PromptPay QR Code หัวห้อง</span>
                 </div>
-                <span className="text-xs font-black text-white bg-[#43A047] border-2 border-slate-900 px-3 py-0.5 rounded-full shadow-[2px_2px_0px_#0f172a]">
+                <span className="text-xs font-black text-white bg-[#43A047] border-2 border-slate-900 dark:border-white/30 px-3 py-0.5 rounded-full shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                   สแกนจ่ายได้เลย!
                 </span>
               </div>
@@ -593,7 +598,7 @@ export default function RoomPage() {
                 {/* QR Image Box */}
                 <div className="shrink-0">
                   {room.qr_url ? (
-                    <div className="relative group p-3 bg-white rounded-2xl shadow-[4px_4px_0px_#0f172a] border-3 border-slate-900 max-w-[200px]">
+                    <div className="relative group p-3 bg-white dark:bg-white rounded-2xl shadow-[4px_4px_0px_#0f172a] border-3 border-slate-900 max-w-[200px]">
                       <img
                         src={room.qr_url}
                         alt="QR Code สำหรับโอนเงินหัวห้อง"
@@ -610,12 +615,12 @@ export default function RoomPage() {
                       </a>
                     </div>
                   ) : (
-                    <div className="w-44 h-44 rounded-2xl bg-[#FFFDF0] border-3 border-dashed border-slate-400 flex flex-col items-center justify-center p-4 text-center shadow-[3px_3px_0px_#0f172a]">
+                    <div className="w-44 h-44 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-dashed border-slate-400 dark:border-slate-600 flex flex-col items-center justify-center p-4 text-center shadow-[3px_3px_0px_#0f172a] dark:shadow-none">
                       <QrCode className="w-8 h-8 text-slate-400 mb-2" />
-                      <p className="text-xs font-black text-slate-700">
+                      <p className="text-xs font-black text-slate-700 dark:text-slate-300">
                         ไม่มีรูป QR Code
                       </p>
-                      <p className="text-[10px] font-bold text-slate-500 mt-1">
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1">
                         โอนผ่านพร้อมเพย์หรือเลขบัญชีผู้จัดนะฮะ
                       </p>
                     </div>
@@ -624,13 +629,13 @@ export default function RoomPage() {
 
                 {/* Amount to Pay & Comic Copy Button */}
                 <div className="flex-1 w-full flex flex-col items-center sm:items-start text-center sm:text-left">
-                  <span className="text-xs uppercase tracking-wider font-black text-slate-600 bg-[#FFF9C4] px-2.5 py-0.5 rounded-md border border-slate-300">
+                  <span className="text-xs uppercase tracking-wider font-black text-slate-700 dark:text-yellow-300 bg-[#FFF9C4] dark:bg-yellow-950/70 px-2.5 py-0.5 rounded-md border border-slate-300 dark:border-yellow-400/40">
                     ยอดโอนต่อคน
                   </span>
-                  <div className="text-4xl sm:text-5xl font-black text-[#E53935] drop-shadow-[2px_2px_0px_#FDD835] mt-1 mb-1">
+                  <div className="text-4xl sm:text-5xl font-black text-[#E53935] dark:text-yellow-300 drop-shadow-[2px_2px_0px_#FDD835] dark:drop-shadow-[2px_2px_0px_#000] mt-1 mb-1">
                     ฿{perPersonAmount.toLocaleString()}
                   </div>
-                  <p className="text-xs font-bold text-slate-600 mb-4">
+                  <p className="text-xs font-bold text-slate-600 dark:text-emerald-100 mb-4">
                     {targetPlayers > 0
                       ? `คำนวณจากยอดรวม ฿${totalRoomFee.toLocaleString()} (หาร ${targetPlayers} คน)`
                       : `ยอดรวมทั้งห้อง ฿${totalRoomFee.toLocaleString()}`}
@@ -640,7 +645,7 @@ export default function RoomPage() {
                   <button
                     type="button"
                     onClick={handleCopyAmount}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-[#FDD835] hover:bg-[#FBC02D] text-slate-950 font-black text-xs sm:text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-[#FDD835] hover:bg-[#FBC02D] text-slate-950 font-black text-xs sm:text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] dark:shadow-[3px_3px_0px_#000] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
                   >
                     {copiedAmount ? (
                       <>
@@ -659,30 +664,30 @@ export default function RoomPage() {
             </div>
 
             {/* Submission Form: แจ้งโอนเงินเข้าก๊วน */}
-            <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-4">
+            <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
                   <Receipt className="w-5 h-5 text-[#E53935]" />
                   <span>แจ้งโอนเงินเข้าก๊วน</span>
                 </div>
-                <span className="text-xs font-bold text-[#43A047] bg-[#E8F5E9] px-2.5 py-0.5 rounded-full border border-[#43A047]">
+                <span className="text-xs font-bold text-[#43A047] dark:text-emerald-300 bg-[#E8F5E9] dark:bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-[#43A047]">
                   แนบสลิปเพื่อยืนยัน
                 </span>
               </div>
-              <p className="text-xs font-bold text-slate-600">
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
                 โอนเงินเสร็จแล้ว กรอกชื่อและแนบสลิปโอนเงินด้านล่างเพื่อให้ระบบบันทึกสถานะ
               </p>
 
               {/* Feedback messages */}
               {submissionError && (
-                <div className="p-3.5 rounded-2xl bg-[#FFEBEE] border-2 border-[#E53935] text-[#C62828] text-xs font-bold flex items-center gap-2 shadow-[2px_2px_0px_#0f172a]">
+                <div className="p-3.5 rounded-2xl bg-[#FFEBEE] dark:bg-[#3b1219] border-2 border-[#E53935] text-[#C62828] dark:text-[#ff8a80] text-xs font-bold flex items-center gap-2 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                   <AlertCircle className="w-4 h-4 shrink-0 text-[#E53935]" />
                   <span>{submissionError}</span>
                 </div>
               )}
 
               {submissionSuccess && (
-                <div className="p-3.5 rounded-2xl bg-[#E8F5E9] border-2 border-[#43A047] text-[#2E7D32] text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#0f172a]">
+                <div className="p-3.5 rounded-2xl bg-[#E8F5E9] dark:bg-emerald-950/80 border-2 border-[#43A047] text-[#2E7D32] dark:text-emerald-300 text-xs font-black flex items-center gap-2 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-[#43A047]" />
                   <span>{submissionSuccess}</span>
                 </div>
@@ -691,7 +696,7 @@ export default function RoomPage() {
               <form onSubmit={handleSubmitSlip} className="space-y-4">
                 {/* Member Name */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     ชื่อของคุณ / ฉายา <span className="text-[#E53935]">*</span>
                   </label>
                   <input
@@ -700,13 +705,13 @@ export default function RoomPage() {
                     value={memberName}
                     onChange={(e) => setMemberName(e.target.value)}
                     placeholder="เช่น ชินจัง, คาซาม่า, มาซาโอะ"
-                    className="w-full px-4 py-3 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-bold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
+                    className="w-full px-4 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
                   />
                 </div>
 
                 {/* Amount Paid */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     ยอดเงินที่โอน (บาท)
                   </label>
                   <div className="relative">
@@ -721,9 +726,9 @@ export default function RoomPage() {
                         )
                       }
                       placeholder={perPersonAmount.toString()}
-                      className="w-full pl-4 pr-12 py-3 bg-[#FFFDF0] border-3 border-slate-900 rounded-2xl text-slate-950 font-black placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
+                      className="w-full pl-4 pr-12 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-black placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-base"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-slate-500 dark:text-slate-400 text-sm">
                       ฿
                     </span>
                   </div>
@@ -731,22 +736,22 @@ export default function RoomPage() {
 
                 {/* Slip File Upload */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                     แนบสลิปโอนเงิน / ภาพหลักฐาน
                   </label>
 
                   {!slipPreview ? (
                     <label
                       htmlFor={slipInputId}
-                      className="flex flex-col items-center justify-center border-3 border-dashed border-slate-300 hover:border-slate-900 rounded-2xl p-4 cursor-pointer bg-[#FFFDF0] hover:bg-[#FFF9C4] transition-all group shadow-[2px_2px_0px_#0f172a]"
+                      className="flex flex-col items-center justify-center border-3 border-dashed border-slate-300 dark:border-slate-600 hover:border-slate-900 dark:hover:border-[#FDD835] rounded-2xl p-4 cursor-pointer bg-[#FFFDF0] dark:bg-[#0f172a] hover:bg-[#FFF9C4] dark:hover:bg-[#1e293b] transition-all group shadow-[2px_2px_0px_#0f172a] dark:shadow-none"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-white group-hover:bg-[#FDD835] border-2 border-slate-900 flex items-center justify-center text-slate-700 transition-all mb-1.5 shadow-[2px_2px_0px_#0f172a]">
+                      <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 group-hover:bg-[#FDD835] border-2 border-slate-900 dark:border-slate-600 flex items-center justify-center text-slate-700 dark:text-slate-300 transition-all mb-1.5 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                         <Upload className="w-5 h-5 stroke-[2.5]" />
                       </div>
-                      <p className="text-xs font-black text-slate-900">
+                      <p className="text-xs font-black text-slate-900 dark:text-white">
                         แตะเพื่อเลือกรูปสลิปโอนเงิน
                       </p>
-                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
+                      <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
                         รองรับ JPG, PNG, WEBP จากแอปธนาคาร
                       </p>
                       <input
@@ -758,7 +763,7 @@ export default function RoomPage() {
                       />
                     </label>
                   ) : (
-                    <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#FFFDF0] border-3 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
+                    <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                       <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-white shrink-0 border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
                         <img
                           src={slipPreview}
@@ -767,10 +772,10 @@ export default function RoomPage() {
                         />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-black text-slate-900 truncate">
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate">
                           {slipFile?.name || "Payment Slip"}
                         </p>
-                        <p className="text-[11px] font-bold text-[#2E7D32] flex items-center gap-1 mt-0.5">
+                        <p className="text-[11px] font-bold text-[#2E7D32] dark:text-emerald-300 flex items-center gap-1 mt-0.5">
                           <FileCheck className="w-3.5 h-3.5" />
                           แนบสลิปเรียบร้อยแล้วฮะ!
                         </p>
@@ -779,7 +784,7 @@ export default function RoomPage() {
                         type="button"
                         onClick={handleRemoveSlip}
                         aria-label="ลบรูปสลิป"
-                        className="p-2 text-slate-500 hover:text-[#E53935] hover:bg-[#FFEBEE] rounded-xl border border-transparent hover:border-slate-900 transition-all"
+                        className="p-2 text-slate-500 hover:text-[#E53935] hover:bg-[#FFEBEE] dark:hover:bg-slate-800 rounded-xl border border-transparent hover:border-slate-900 transition-all cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -791,7 +796,7 @@ export default function RoomPage() {
                 <button
                   type="submit"
                   disabled={isSubmittingSlip || !memberName.trim()}
-                  className="w-full py-4 px-4 rounded-2xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-base border-3 border-slate-900 shadow-[4px_4px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="w-full py-4 px-4 rounded-2xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-base border-3 border-slate-900 dark:border-yellow-300 shadow-[4px_4px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {isSubmittingSlip ? (
                     <>
@@ -816,7 +821,7 @@ export default function RoomPage() {
         {activeTab === "list" && (
           <div className="space-y-5 animate-in fade-in duration-200">
             {/* Chocobi Snack Box Styled Progress Card */}
-            <div className="bg-[#43A047] rounded-3xl p-5 border-4 border-slate-900 shadow-[6px_6px_0px_0px_#0f172a] text-white space-y-3 relative overflow-hidden">
+            <div className="bg-[#43A047] dark:bg-[#1a3d28] rounded-3xl p-5 border-4 border-slate-900 dark:border-[#FDD835] shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#FDD835] text-white space-y-3 relative overflow-hidden">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white font-black text-base">
                   <ChocobiStar className="w-5 h-5 text-[#FDD835]" />
@@ -859,7 +864,7 @@ export default function RoomPage() {
               </div>
 
               {isGoalReached && (
-                <div className="p-3.5 bg-[#FFF9C4] border-3 border-slate-900 rounded-2xl flex items-center gap-2.5 text-slate-950 text-xs sm:text-sm font-black shadow-[3px_3px_0px_#0f172a] animate-in fade-in">
+                <div className="p-3.5 bg-[#FFF9C4] dark:bg-[#2c2207] border-3 border-slate-900 dark:border-yellow-400 rounded-2xl flex items-center gap-2.5 text-slate-950 dark:text-yellow-200 text-xs sm:text-sm font-black shadow-[3px_3px_0px_#0f172a] dark:shadow-none animate-in fade-in">
                   <PartyPopper className="w-5 h-5 text-[#E53935] shrink-0" />
                   <span>🎉 วู้ววว! สมาชิกจ่ายเงินครบก๊วนแล้ว รอดพ้นมือแม่มิซาเอะ!</span>
                 </div>
@@ -867,16 +872,16 @@ export default function RoomPage() {
             </div>
 
             {/* Paid Members List */}
-            <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-3.5">
+            <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
                   <Users className="w-5 h-5 text-[#43A047]" />
                   <span>รายชื่อคนที่โอนแล้ว ({paidMembersCount} คน)</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setActiveTab("pay")}
-                  className="text-xs font-black text-[#E53935] hover:underline"
+                  className="text-xs font-black text-[#E53935] hover:underline cursor-pointer"
                 >
                   + แจ้งโอนเพิ่ม
                 </button>
@@ -884,21 +889,21 @@ export default function RoomPage() {
 
               {paidMembersList.length === 0 ? (
                 <div className="py-8 text-center space-y-3">
-                  <div className="w-14 h-14 rounded-2xl bg-[#FFFDF0] border-2 border-slate-900 flex items-center justify-center mx-auto shadow-[3px_3px_0px_#0f172a]">
+                  <div className="w-14 h-14 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-700 flex items-center justify-center mx-auto shadow-[3px_3px_0px_#0f172a] dark:shadow-none">
                     <ShiroAvatar className="w-8 h-8" />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-slate-800">
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-100">
                       ยังไม่มีใครแจ้งโอนเลยฮะ!
                     </p>
-                    <p className="text-xs font-bold text-slate-500 mt-0.5">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">
                       เป็นคนแรกที่สแกนจ่ายและส่งสลิปให้ก๊วนกันเถอะ!
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setActiveTab("pay")}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#FDD835] text-slate-950 text-xs font-black border-2 border-slate-900 shadow-[3px_3px_0px_#0f172a] hover:bg-[#FBC02D] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#FDD835] text-slate-950 text-xs font-black border-2 border-slate-900 shadow-[3px_3px_0px_#0f172a] hover:bg-[#FBC02D] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
                   >
                     <CreditCard className="w-4 h-4 stroke-[2.5]" />
                     <span>ไปหน้าสแกนจ่ายเงิน</span>
@@ -910,7 +915,7 @@ export default function RoomPage() {
                     return (
                       <div
                         key={member.id}
-                        className="flex items-center justify-between p-3.5 rounded-2xl bg-[#FFFDF0] border-2 border-slate-900 shadow-[3px_3px_0px_#0f172a] hover:bg-white transition-all"
+                        className="flex items-center justify-between p-3.5 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-700 shadow-[3px_3px_0px_#0f172a] dark:shadow-none hover:bg-white dark:hover:bg-[#162033] transition-all"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Character Avatar */}
@@ -918,11 +923,11 @@ export default function RoomPage() {
 
                           {/* Member info */}
                           <div className="min-w-0">
-                            <div className="text-sm font-black text-slate-950 truncate">
+                            <div className="text-sm font-black text-slate-950 dark:text-white truncate">
                               {member.name}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
-                              <span className="text-[#2E7D32] font-black">
+                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                              <span className="text-[#2E7D32] dark:text-emerald-400 font-black">
                                 ฿{Number(member.amount).toLocaleString()} บาท
                               </span>
                               {member.created_at && (
@@ -950,14 +955,14 @@ export default function RoomPage() {
                                 setViewSlipUrl(member.slip_url || null);
                                 setViewSlipMember(member.name);
                               }}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-[#FFF9C4] text-slate-950 text-xs font-black border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white dark:bg-[#1e293b] hover:bg-[#FFF9C4] dark:hover:bg-slate-700 text-slate-950 dark:text-white text-xs font-black border-2 border-slate-900 dark:border-slate-600 shadow-[2px_2px_0px_#0f172a] dark:shadow-none active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
                             >
                               <ImageIcon className="w-3.5 h-3.5 text-[#E53935]" />
                               <span>ดูสลิป</span>
                             </button>
                           ) : null}
 
-                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-xl bg-[#E8F5E9] text-[#2E7D32] border-2 border-[#43A047]">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-xl bg-[#E8F5E9] dark:bg-emerald-950/80 text-[#2E7D32] dark:text-emerald-300 border-2 border-[#43A047]">
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
                             <span>จ่ายแล้วจ้า! ✨</span>
                           </span>
@@ -972,12 +977,12 @@ export default function RoomPage() {
         )}
 
         {/* Share Section (Visible on both tabs) */}
-        <div className="bg-white rounded-3xl p-5 border-3 border-slate-900 shadow-[5px_5px_0px_0px_#0f172a] space-y-3">
-          <div className="flex items-center gap-2 text-slate-950 font-black text-base">
+        <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
+          <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
             <Share2 className="w-5 h-5 text-[#E53935]" />
             <span>แชร์ให้เพื่อนในก๊วน</span>
           </div>
-          <p className="text-xs font-bold text-slate-600">
+          <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
             ส่งลิงก์เข้ากลุ่ม LINE ให้เพื่อนกดเข้ามาสแกนจ่ายและแนบสลิปได้เลย
           </p>
 
@@ -986,16 +991,16 @@ export default function RoomPage() {
             <button
               type="button"
               onClick={handleCopyLink}
-              className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-[#FFFDF0] hover:bg-white border-3 border-slate-900 text-slate-950 text-xs font-black shadow-[3px_3px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
+              className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] hover:bg-white dark:hover:bg-[#1e293b] border-3 border-slate-900 dark:border-slate-600 text-slate-950 dark:text-white text-xs font-black shadow-[3px_3px_0px_#0f172a] dark:shadow-none active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
             >
               {copiedLink ? (
                 <>
-                  <Check className="w-4 h-4 text-[#2E7D32] stroke-[3]" />
-                  <span className="text-[#2E7D32]">คัดลอกลิงก์แล้ว!</span>
+                  <Check className="w-4 h-4 text-[#2E7D32] dark:text-emerald-400 stroke-[3]" />
+                  <span className="text-[#2E7D32] dark:text-emerald-400">คัดลอกลิงก์แล้ว!</span>
                 </>
               ) : (
                 <>
-                  <Copy className="w-4 h-4 text-slate-700 stroke-[2.5]" />
+                  <Copy className="w-4 h-4 text-slate-700 dark:text-slate-300 stroke-[2.5]" />
                   <span>คัดลอกลิงก์ก๊วน</span>
                 </>
               )}
@@ -1005,7 +1010,7 @@ export default function RoomPage() {
             <button
               type="button"
               onClick={handleCopyLineSummary}
-              className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
+              className="flex items-center justify-center gap-2 p-3.5 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black border-3 border-slate-900 dark:border-slate-600 shadow-[3px_3px_0px_#0f172a] dark:shadow-none active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
             >
               {copiedLineSummary ? (
                 <>
@@ -1025,24 +1030,24 @@ export default function RoomPage() {
         {/* Full Slip Modal */}
         {viewSlipUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in">
-            <div className="bg-white border-4 border-slate-900 rounded-3xl max-w-sm w-full p-4 shadow-[8px_8px_0px_0px_#0f172a] space-y-3 relative">
+            <div className="bg-white dark:bg-[#1a2234] border-4 border-slate-900 dark:border-[#FDD835] rounded-3xl max-w-sm w-full p-4 shadow-[8px_8px_0px_0px_#0f172a] dark:shadow-[8px_8px_0px_0px_#FDD835] space-y-3 relative">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-[#E53935]" />
-                  <h3 className="text-sm font-black text-slate-950 truncate">
+                  <h3 className="text-sm font-black text-slate-950 dark:text-white truncate">
                     สลิปของ {viewSlipMember || "สมาชิก"}
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setViewSlipUrl(null)}
-                  className="p-1 rounded-xl bg-slate-100 border border-slate-900 hover:bg-slate-200 text-slate-900"
+                  className="p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-900 dark:border-slate-600 hover:bg-slate-200 text-slate-900 dark:text-white cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="rounded-2xl overflow-hidden bg-slate-100 border-3 border-slate-900 max-h-[65vh] flex items-center justify-center">
+              <div className="rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-900 border-3 border-slate-900 dark:border-slate-700 max-h-[65vh] flex items-center justify-center">
                 <img
                   src={viewSlipUrl}
                   alt="Full Payment Slip"
@@ -1055,7 +1060,7 @@ export default function RoomPage() {
                   href={viewSlipUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-black text-[#E53935] hover:underline flex items-center gap-1"
+                  className="text-xs font-black text-[#E53935] dark:text-yellow-300 hover:underline flex items-center gap-1"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>เปิดรูปแท็บใหม่</span>
@@ -1073,7 +1078,7 @@ export default function RoomPage() {
         )}
 
         {/* Bottom Comic Footer */}
-        <footer className="text-center text-xs font-bold text-slate-500 py-4 flex items-center justify-center gap-1.5">
+        <footer className="text-center text-xs font-bold text-slate-500 dark:text-slate-400 py-4 flex items-center justify-center gap-1.5">
           <ShinchanAvatar className="w-4 h-4" />
           <span>Bad-Split x Crayon Shin-chan • หารค่าแบดมินตันสุดน่ารัก</span>
           <Sparkles className="w-3.5 h-3.5 text-[#FDD835]" />

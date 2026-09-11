@@ -83,21 +83,22 @@ export function ShinchanFloatingBackground() {
   }, []);
 
   const renderAvatar = (type: FloatingItem["type"], size: number) => {
+    const shadowClass = "drop-shadow-[3px_3px_0px_#0f172a] dark:drop-shadow-[0px_0px_8px_rgba(250,204,21,0.6)]";
     switch (type) {
       case "shinchan":
-        return <ShinchanAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <ShinchanAvatar size={size} className={shadowClass} />;
       case "himawari":
-        return <HimawariAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <HimawariAvatar size={size} className={shadowClass} />;
       case "shiro":
-        return <ShiroAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <ShiroAvatar size={size} className={shadowClass} />;
       case "hiroshi":
-        return <HiroshiAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <HiroshiAvatar size={size} className={shadowClass} />;
       case "misae":
-        return <MisaeAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <MisaeAvatar size={size} className={shadowClass} />;
       case "buri":
-        return <BuriAvatar size={size} className="drop-shadow-[3px_3px_0px_#0f172a]" />;
+        return <BuriAvatar size={size} className={shadowClass} />;
       case "star":
-        return <ChocobiStar size={size} className="drop-shadow-[2px_2px_0px_#0f172a]" />;
+        return <ChocobiStar size={size} className="drop-shadow-[2px_2px_0px_#0f172a] dark:drop-shadow-[0px_0px_6px_rgba(255,235,59,0.9)]" />;
     }
   };
 

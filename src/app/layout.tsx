@@ -12,11 +12,26 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="th" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#FEF9E7] text-slate-900 selection:bg-[#E53935] selection:text-white font-sans">
+    <html lang="th" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const storedTheme = localStorage.getItem('shinchan-theme');
+                if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                  document.documentElement.classList.add('dark');
+                } else {
+                  document.documentElement.classList.remove('dark');
+                }
+              } catch (_) {}
+            `,
+          }}
+        />
+      </head>
+      <body className="min-h-full flex flex-col bg-[#FEF9E7] dark:bg-[#0d131f] text-slate-900 dark:text-slate-100 selection:bg-[#E53935] selection:text-white transition-colors duration-200">
         {children}
       </body>
     </html>
   );
 }
-
