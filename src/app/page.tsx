@@ -158,6 +158,26 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Dissolved Room Notice state
+  const [showDissolvedNotice, setShowDissolvedNotice] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      return url.searchParams.get("dissolved") === "1";
+    }
+    return false;
+  });
+
+  // Clean dissolved query param on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("dissolved") === "1") {
+        url.searchParams.delete("dissolved");
+        window.history.replaceState(null, "", url.toString());
+      }
+    }
+  }, []);
+
   // Fetch active rooms on mount
   useEffect(() => {
     let isMounted = true;
@@ -621,6 +641,23 @@ export default function HomePage() {
 
           <ThemeToggle />
         </div>
+
+        {/* Dissolved Room Notice Toast */}
+        {showDissolvedNotice && (
+          <div className="p-3.5 rounded-2xl bg-[#FFF9C4] dark:bg-yellow-950/60 border-3 border-slate-900 dark:border-yellow-400 text-slate-950 dark:text-yellow-100 text-xs sm:text-sm font-black shadow-[4px_4px_0px_#0f172a] dark:shadow-none flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">💥</span>
+              <span>ยุบห้องก๊วนแบดเรียบร้อยแล้วฮะ! ลบข้อมูลและสลิปหมดจดเลย! 🏸</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDissolvedNotice(false)}
+              className="p-1 rounded-lg bg-white/80 dark:bg-slate-800 border border-slate-900 hover:bg-white text-slate-900 dark:text-white cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* ========================================================================= */}
         {/* MODE 1: SELECT (Landing Discovery Screen - สร้างห้อง / ค้นหารหัส / ก๊วนที่เปิดอยู่) */}

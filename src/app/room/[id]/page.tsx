@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useState, useId } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import confetti from "canvas-confetti";
 import {
@@ -51,6 +51,7 @@ import { ShinchanFloatingBackground } from "@/components/ShinchanFloatingBackgro
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function RoomPage() {
+  const router = useRouter();
   const params = useParams();
   const roomId = params?.id as string;
   const slipInputId = useId();
@@ -75,6 +76,11 @@ export default function RoomPage() {
   const [hostNotes, setHostNotes] = useState("");
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesSavedSuccess, setNotesSavedSuccess] = useState(false);
+
+  // Dissolve room states (Host only)
+  const [showDissolveModal, setShowDissolveModal] = useState(false);
+  const [isDissolving, setIsDissolving] = useState(false);
+  const [dissolveError, setDissolveError] = useState<string | null>(null);
 
   // Form states for member payment submission
   const [memberName, setMemberName] = useState("");
@@ -342,6 +348,72 @@ export default function RoomPage() {
       console.error("Failed to delete member:", err);
       // Refresh to restore
       handleRefresh();
+    }
+  };
+
+  // Dissolve Room Handler (Host only)
+  const handleDissolveRoom = async () => {
+    if (!isHost || !roomId) return;
+    setIsDissolving(true);
+    setDissolveError(null);
+
+    try {
+      // 1. Delete all members first to prevent FK constraint issues
+      const { error: membersErr } = await supabase
+        .from("members")
+        .delete()
+        .eq("room_id", roomId);
+
+      if (membersErr) {
+        console.warn("Notice: members deletion reported:", membersErr.message);
+      }
+
+      // 2. Delete room from rooms table
+      const { error: roomErr } = await supabase
+        .from("rooms")
+        .delete()
+        .eq("id", roomId);
+
+      if (roomErr) {
+        throw new Error(roomErr.message || "ไม่สามารถลบห้องก๊วนแบดได้");
+      }
+
+      // 3. Cleanup host passkey from localStorage
+      try {
+        localStorage.removeItem(`badsplit_host_${roomId}`);
+      } catch (storageErr) {
+        console.warn("Storage cleanup host key error:", storageErr);
+      }
+
+      // 4. Remove room from recent rooms
+      try {
+        const stored = localStorage.getItem("badsplit_recent_rooms");
+        if (stored) {
+          const recents = JSON.parse(stored);
+          if (Array.isArray(recents)) {
+            const filtered = recents.filter(
+              (r: { id?: string }) => r && r.id !== roomId
+            );
+            localStorage.setItem(
+              "badsplit_recent_rooms",
+              JSON.stringify(filtered)
+            );
+          }
+        }
+      } catch (storageErr) {
+        console.warn("Storage cleanup recent rooms error:", storageErr);
+      }
+
+      // 5. Redirect to homepage with dissolved status
+      router.push("/?dissolved=1");
+    } catch (err) {
+      console.error("Failed to dissolve room:", err);
+      setDissolveError(
+        err instanceof Error
+          ? err.message
+          : "เกิดข้อผิดพลาดในการยุบห้อง กรุณาลองใหม่อีกครั้งนะฮะ"
+      );
+      setIsDissolving(false);
     }
   };
 
@@ -666,16 +738,28 @@ export default function RoomPage() {
           <div className="flex items-center gap-2">
             {/* Host Status & Login/Logout Button */}
             {isHost ? (
-              <div className="inline-flex items-center gap-1.5 bg-[#FDD835] text-slate-950 px-2.5 py-1.5 rounded-xl border-2 border-slate-900 font-black text-xs shadow-[2px_2px_0px_#0f172a]">
-                <Crown className="w-3.5 h-3.5 text-[#E53935]" />
-                <span className="hidden sm:inline">หัวห้อง</span>
+              <div className="flex items-center gap-1.5">
+                <div className="inline-flex items-center gap-1.5 bg-[#FDD835] text-slate-950 px-2.5 py-1.5 rounded-xl border-2 border-slate-900 font-black text-xs shadow-[2px_2px_0px_#0f172a]">
+                  <Crown className="w-3.5 h-3.5 text-[#E53935]" />
+                  <span className="hidden sm:inline">หัวห้อง</span>
+                  <button
+                    type="button"
+                    onClick={handleHostLogout}
+                    title="ออกจากโหมดหัวห้อง"
+                    className="ml-1 text-[10px] underline text-slate-800 hover:text-black"
+                  >
+                    ออก
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={handleHostLogout}
-                  title="ออกจากโหมดหัวห้อง"
-                  className="ml-1 text-[10px] underline text-slate-800 hover:text-black"
+                  onClick={() => setShowDissolveModal(true)}
+                  title="ยุบห้องก๊วนนี้ (เฉพาะหัวห้อง)"
+                  className="inline-flex items-center gap-1 text-xs font-black text-white bg-[#E53935] hover:bg-[#D32F2F] px-2.5 py-1.5 rounded-xl border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
                 >
-                  ออก
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">ยุบห้อง</span>
                 </button>
               </div>
             ) : (
@@ -1414,6 +1498,32 @@ export default function RoomPage() {
           </div>
         </div>
 
+        {/* Host Danger Zone / Dissolve Room Section (Host Only) */}
+        {isHost && (
+          <div className="bg-[#FFF5F5] dark:bg-[#201015] rounded-3xl p-5 border-3 border-[#E53935] shadow-[5px_5px_0px_0px_#E53935] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#E53935] dark:text-[#ff8a80] font-black text-sm sm:text-base">
+                <Trash2 className="w-5 h-5" />
+                <span>โซนหัวห้อง: ยุบก๊วนแบดนี้</span>
+              </div>
+              <span className="text-[10px] font-black bg-[#E53935] text-white px-2 py-0.5 rounded-full border border-slate-900">
+                เฉพาะหัวห้อง
+              </span>
+            </div>
+            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+              เมื่อก๊วนตีแบดเสร็จและทุกคนเคลียร์ยอดเรียบร้อยแล้ว หัวห้องสามารถกดยุบห้องนี้เพื่อลบข้อมูลก๊วน สลิปโอนเงิน และรายชื่อสมาชิกทั้งหมดออกจากระบบ
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowDissolveModal(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] text-xs sm:text-sm font-black border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4 stroke-[2.5]" />
+              <span>ยุบก๊วนแบดนี้ (ลบห้องถาวร) 💥</span>
+            </button>
+          </div>
+        )}
+
         {/* Full Slip Modal */}
         {viewSlipUrl && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in">
@@ -1536,6 +1646,99 @@ export default function RoomPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Host Dissolve Room Confirmation Modal */}
+        {showDissolveModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white dark:bg-[#1a2234] border-4 border-slate-900 dark:border-[#E53935] rounded-3xl max-w-sm w-full p-5 shadow-[8px_8px_0px_0px_#E53935] space-y-4 relative">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-[#FFEBEE] dark:bg-red-950/60 border-2 border-[#E53935] flex items-center justify-center text-[#E53935]">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-slate-950 dark:text-white">
+                      ยุบห้องก๊วนแบด?! 💥
+                    </h3>
+                    <p className="text-[10px] font-black text-[#E53935] uppercase tracking-wider">
+                      เฉพาะหัวห้อง (Host Only)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isDissolving) {
+                      setShowDissolveModal(false);
+                      setDissolveError(null);
+                    }
+                  }}
+                  disabled={isDissolving}
+                  className="p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-900 dark:border-slate-600 hover:bg-slate-200 text-slate-900 dark:text-white cursor-pointer disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#FFF9C4] dark:bg-yellow-950/40 border-2 border-slate-900 dark:border-yellow-500/50 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-black text-slate-950 dark:text-yellow-200">
+                  <AlertCircle className="w-4 h-4 text-[#E53935] shrink-0" />
+                  <span className="truncate">ห้อง: {cleanTitle}</span>
+                </div>
+                <div className="text-[11px] font-mono text-slate-700 dark:text-slate-300 font-bold">
+                  รหัสห้อง: <span className="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-400">{displayRoomCode}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-black text-[#E53935] dark:text-[#ff8a80] flex items-center gap-1">
+                  ⚠️ คำเตือนสำคัญจากชินจัง:
+                </p>
+                <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                  หากกดยุบห้อง ข้อมูลก๊วน สลิปที่แนบมา และรายชื่อเพื่อนทุกคนจะถูก<span className="underline decoration-[#E53935] font-black text-slate-900 dark:text-white">ลบถาวรทันที</span> และไม่สามารถกู้คืนได้อีกนะฮะ!
+                </p>
+              </div>
+
+              {dissolveError && (
+                <div className="p-3 rounded-xl bg-[#FFEBEE] dark:bg-[#3b1219] border-2 border-[#E53935] text-[#C62828] dark:text-[#ff8a80] text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{dissolveError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDissolveModal(false);
+                    setDissolveError(null);
+                  }}
+                  disabled={isDissolving}
+                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-xs border-2 border-slate-900 dark:border-slate-700 hover:bg-slate-200 cursor-pointer disabled:opacity-50"
+                >
+                  ยกเลิก / เก็บไว้ก่อน
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDissolveRoom}
+                  disabled={isDissolving}
+                  className="flex-1 py-3 rounded-xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-xs border-2 border-slate-900 shadow-[3px_3px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
+                >
+                  {isDissolving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-[#FDD835]" />
+                      <span>กำลังยุบห้อง...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>ยืนยันยุบห้องเลย! 💥</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
