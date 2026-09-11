@@ -32,6 +32,7 @@ import {
   getDisplayRoomCode,
   generateRoomCode,
   formatRelativeTime,
+  getCleanTitle,
 } from "@/lib/roomCode";
 import {
   ShinchanAvatar,
@@ -49,6 +50,44 @@ interface RecentRoomItem {
   per_person_fee?: number | null;
   total_fee?: number;
   visited_at?: string;
+}
+
+// Resilient helper to fetch active rooms with fallback
+async function fetchActiveRoomsFromSupabase(): Promise<Room[]> {
+  // 1. Try selecting with members embed
+  try {
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("*, members(id, is_paid)")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (!error && data && data.length > 0) {
+      return data as Room[];
+    }
+    if (error) {
+      console.warn("Active rooms with members embed warning:", error.message);
+    }
+  } catch (err) {
+    console.warn("Active rooms embed exception:", err);
+  }
+
+  // 2. Fallback: query without members embed
+  try {
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (!error && data) {
+      return data as Room[];
+    }
+  } catch (err) {
+    console.warn("Active rooms fallback exception:", err);
+  }
+
+  return [];
 }
 
 export default function HomePage() {
@@ -122,42 +161,23 @@ export default function HomePage() {
   // Fetch active rooms on mount
   useEffect(() => {
     let isMounted = true;
-    Promise.resolve(
-      supabase
-        .from("rooms")
-        .select(
-          "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, room_code, created_at, members(id, is_paid)"
-        )
-        .order("created_at", { ascending: false })
-        .limit(10)
-    )
-      .then(({ data, error }) => {
-        if (!isMounted) return;
-        if (!error && data) {
-          setActiveRooms(data as Room[]);
-        } else if (error) {
-          // Fallback if room_code column doesn't exist yet
-          Promise.resolve(
-            supabase
-              .from("rooms")
-              .select(
-                "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, created_at, members(id, is_paid)"
-              )
-              .order("created_at", { ascending: false })
-              .limit(10)
-          ).then(({ data: fallbackData }) => {
-            if (!isMounted) return;
-            if (fallbackData) {
-              setActiveRooms(fallbackData as Room[]);
-            }
-          });
+
+    async function loadActiveRooms() {
+      try {
+        const rooms = await fetchActiveRoomsFromSupabase();
+        if (isMounted) {
+          setActiveRooms(rooms);
         }
-        setIsLoadingActiveRooms(false);
-      })
-      .catch((err: unknown) => {
+      } catch (err) {
         console.warn("Failed to load active rooms:", err);
-        if (isMounted) setIsLoadingActiveRooms(false);
-      });
+      } finally {
+        if (isMounted) {
+          setIsLoadingActiveRooms(false);
+        }
+      }
+    }
+
+    loadActiveRooms();
 
     return () => {
       isMounted = false;
@@ -168,28 +188,8 @@ export default function HomePage() {
   const handleRefreshActiveRooms = async () => {
     setIsRefreshingActiveRooms(true);
     try {
-      const { data, error } = await supabase
-        .from("rooms")
-        .select(
-          "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, room_code, created_at, members(id, is_paid)"
-        )
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (!error && data) {
-        setActiveRooms(data as Room[]);
-      } else {
-        const fallback = await supabase
-          .from("rooms")
-          .select(
-            "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, created_at, members(id, is_paid)"
-          )
-          .order("created_at", { ascending: false })
-          .limit(10);
-        if (fallback.data) {
-          setActiveRooms(fallback.data as Room[]);
-        }
-      }
+      const rooms = await fetchActiveRoomsFromSupabase();
+      setActiveRooms(rooms);
     } catch (e) {
       console.warn("Failed to refresh active rooms:", e);
     } finally {
@@ -223,11 +223,11 @@ export default function HomePage() {
     return trimmed;
   };
 
-  // Search and Join Room by Code or URL
+  // Search and Join Room by Code or URL (Robust & Normalized)
   const handleSearchRoomCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const raw = roomCodeInput.trim();
-    if (!raw) {
+    const rawInput = roomCodeInput.trim();
+    if (!rawInput) {
       setCodeSearchError("กรุณากรอกรหัสก๊วนนะฮะ!");
       return;
     }
@@ -235,16 +235,23 @@ export default function HomePage() {
     setIsSearchingCode(true);
     setCodeSearchError(null);
 
-    try {
-      const cleanTarget = extractRoomId(raw).toUpperCase();
+    // 1. Normalize user input: code.trim().toUpperCase()
+    const extracted = extractRoomId(rawInput);
+    const normalizedCode = extracted.trim().toUpperCase();
 
-      // 1. Check in locally loaded active rooms first for instant navigation
+    try {
+      // 2. Check in currently loaded activeRooms in memory for instant navigation
       const localMatch = activeRooms.find((r) => {
         const dCode = getDisplayRoomCode(r).toUpperCase();
+        const rawId = r.id.toLowerCase();
+        const cleanId = r.id.replace(/-/g, "").toUpperCase();
         return (
-          dCode === cleanTarget ||
-          r.id.toLowerCase() === raw.toLowerCase() ||
-          r.id.replace(/-/g, "").toLowerCase().startsWith(raw.toLowerCase())
+          dCode === normalizedCode ||
+          rawId === rawInput.toLowerCase() ||
+          cleanId === normalizedCode ||
+          cleanId.startsWith(normalizedCode) ||
+          r.title?.toUpperCase().includes(`[CODE:${normalizedCode}]`) ||
+          r.title?.toLowerCase().includes(rawInput.toLowerCase())
         );
       });
 
@@ -253,51 +260,108 @@ export default function HomePage() {
         return;
       }
 
-      // 2. Query Supabase by room_code column
-      try {
-        const { data: codeData } = await supabase
+      // 3. If user input is a full UUID, query by exact ID
+      const isUUID =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          extracted
+        );
+      if (isUUID) {
+        const { data: uuidRoom } = await supabase
           .from("rooms")
           .select("id, title")
-          .eq("room_code", cleanTarget)
-          .single();
+          .eq("id", extracted.toLowerCase())
+          .maybeSingle();
 
-        if (codeData) {
-          router.push(`/room/${codeData.id}`);
+        if (uuidRoom) {
+          router.push(`/room/${uuidRoom.id}`);
+          return;
+        }
+      }
+
+      // 4. Query Supabase by room_code column (if it exists)
+      try {
+        const { data: codeRooms, error: codeErr } = await supabase
+          .from("rooms")
+          .select("id, title")
+          .ilike("room_code", normalizedCode)
+          .limit(1);
+
+        if (!codeErr && codeRooms && codeRooms.length > 0) {
+          router.push(`/room/${codeRooms[0].id}`);
           return;
         }
       } catch {
-        // column might not exist
+        // column room_code might not exist yet
       }
 
-      // 3. Query by UUID prefix or exact ID
-      const { data: idData } = await supabase
-        .from("rooms")
-        .select("id, title")
-        .ilike("id", `${raw.toLowerCase()}%`)
-        .limit(1);
+      // 5. Query Supabase by title containing [CODE:...]
+      try {
+        const { data: codeTitleRooms } = await supabase
+          .from("rooms")
+          .select("id, title")
+          .ilike("title", `%[CODE:${normalizedCode}]%`)
+          .limit(1);
 
-      if (idData && idData.length > 0) {
-        router.push(`/room/${idData[0].id}`);
-        return;
+        if (codeTitleRooms && codeTitleRooms.length > 0) {
+          router.push(`/room/${codeTitleRooms[0].id}`);
+          return;
+        }
+      } catch {
+        // ignore
       }
 
-      // 4. Query by title containing [CODE:...] or title substring
-      const { data: titleData } = await supabase
-        .from("rooms")
-        .select("id, title")
-        .or(`title.ilike.%[CODE:${cleanTarget}]%,title.ilike.%${cleanTarget}%`)
-        .limit(1);
+      // 6. Query Supabase by title substring
+      try {
+        const { data: titleMatchRooms } = await supabase
+          .from("rooms")
+          .select("id, title")
+          .ilike("title", `%${rawInput}%`)
+          .limit(1);
 
-      if (titleData && titleData.length > 0) {
-        router.push(`/room/${titleData[0].id}`);
-        return;
+        if (titleMatchRooms && titleMatchRooms.length > 0) {
+          router.push(`/room/${titleMatchRooms[0].id}`);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+
+      // 7. Check latest 50 rooms from Supabase by matching ID prefix or display code in memory
+      try {
+        const { data: recentDbRooms } = await supabase
+          .from("rooms")
+          .select("id, title")
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (recentDbRooms) {
+          const match = recentDbRooms.find((r) => {
+            const dCode = getDisplayRoomCode(r).toUpperCase();
+            const cleanId = r.id.replace(/-/g, "").toUpperCase();
+            return (
+              dCode === normalizedCode ||
+              cleanId === normalizedCode ||
+              cleanId.startsWith(normalizedCode) ||
+              r.title?.toUpperCase().includes(`[CODE:${normalizedCode}]`) ||
+              r.title?.toLowerCase().includes(rawInput.toLowerCase())
+            );
+          });
+
+          if (match) {
+            router.push(`/room/${match.id}`);
+            return;
+          }
+        }
+      } catch {
+        // ignore
       }
 
       setCodeSearchError(
-        `ไม่พบห้องรหัส "${raw}" ฮะ! กรุณาตรวจสอบรหัสหรือลองเลือกจากรายการด้านล่าง`
+        `ไม่พบห้องรหัส "${normalizedCode}" ฮะ! กรุณาตรวจสอบรหัสหรือลองเลือกจากรายการก๊วนด้านล่าง`
       );
       setIsSearchingCode(false);
-    } catch {
+    } catch (err) {
+      console.error("Room search error:", err);
       setCodeSearchError("เกิดข้อผิดพลาดในการค้นหาห้อง กรุณาลองใหม่อีกครั้ง");
       setIsSearchingCode(false);
     }
@@ -535,9 +599,10 @@ export default function HomePage() {
   // Filter active rooms by title or room code
   const filteredActiveRooms = activeRooms.filter((r) => {
     const code = getDisplayRoomCode(r).toLowerCase();
+    const titleText = (r.title || "").toLowerCase();
     const q = activeRoomsSearch.toLowerCase().trim();
     if (!q) return true;
-    return r.title?.toLowerCase().includes(q) || code.includes(q);
+    return titleText.includes(q) || code.includes(q);
   });
 
   return (
@@ -621,7 +686,7 @@ export default function HomePage() {
                       <button
                         type="button"
                         onClick={() => setRoomCodeInput("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black dark:hover:text-white p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black dark:hover:text-white p-1 cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -781,10 +846,7 @@ export default function HomePage() {
                     const paidCount = room.members
                       ? room.members.filter((m) => m.is_paid).length
                       : 0;
-                    const cleanTitle = room.title
-                      .replace(/\s*\[CODE:[^\]]+\]/gi, "")
-                      .replace(/\s*\[เป้าหมาย\s*\d+\s*คน\]/gi, "")
-                      .trim();
+                    const cleanTitle = getCleanTitle(room.title);
 
                     return (
                       <div
@@ -847,7 +909,7 @@ export default function HomePage() {
                 <div className="py-6 text-center text-xs font-bold text-slate-400">
                   {activeRoomsSearch
                     ? "ไม่พบก๊วนที่ตรงกับคำค้นหาฮะ"
-                    : "ยังไม่มีก๊วนที่เปิดล่าสุดใน 24-48 ชั่วโมงนี้ฮะ"}
+                    : "ยังไม่มีก๊วนที่เปิดล่าสุดในระบบฮะ"}
                 </div>
               )}
             </div>
@@ -878,7 +940,7 @@ export default function HomePage() {
                     >
                       <div className="min-w-0 flex-1 pr-3">
                         <p className="text-xs font-black text-slate-950 dark:text-white truncate group-hover:text-[#E53935] dark:group-hover:text-[#FDD835] transition-colors">
-                          {r.title}
+                          {getCleanTitle(r.title)}
                         </p>
                         <div className="flex items-center gap-2 mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                           {r.per_person_fee ? (
@@ -938,7 +1000,7 @@ export default function HomePage() {
                 <span className="text-[#43A047]">📱</span>
               </h1>
               <p className="text-xs font-bold text-slate-600 dark:text-slate-400 mt-1">
-                วางลิงก์ที่เพื่อนส่งมาใน LINE เพื่อไปหน้าสแกนจ่ายเงินได้ทันทีฮะ!
+                กรอกรหัสก๊วน หรือวางลิงก์ที่เพื่อนส่งมาใน LINE เพื่อไปหน้าสแกนจ่ายเงินได้ทันทีฮะ!
               </p>
             </header>
 
@@ -974,7 +1036,7 @@ export default function HomePage() {
                     type="text"
                     value={roomCodeInput}
                     onChange={(e) => setRoomCodeInput(e.target.value)}
-                    placeholder="วางลิงก์ห้อง เช่น .../room/... หรือใส่รหัสห้อง"
+                    placeholder="วางลิงก์ห้อง หรือใส่รหัส เช่น BAD88"
                     className="w-full px-4 py-3.5 pr-10 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#43A047] transition-all text-xs sm:text-sm"
                   />
                   {roomCodeInput && (
@@ -1437,7 +1499,7 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                      <p className="text-xs font-black text-slate-950 dark:text-white truncate">
                         {qrFile?.name || "Host PromptPay QR"}
                       </p>
                       <p className="text-[11px] font-bold text-[#2E7D32] dark:text-emerald-300 flex items-center gap-1 mt-0.5">

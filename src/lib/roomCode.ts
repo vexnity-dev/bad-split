@@ -56,3 +56,15 @@ export function formatRelativeTime(dateStr?: string): string {
   if (diffDays < 7) return `สร้างเมื่อ ${diffDays} วันที่แล้ว`;
   return date.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
+
+/**
+ * Strip internal tags like [CODE:...] and [เป้าหมาย ... คน] from title
+ */
+export function getCleanTitle(title?: string | null): string {
+  if (!title) return "";
+  return title
+    .replace(/\s*\[CODE:[^\]]+\]/gi, "")
+    .replace(/\s*\[(?:เป้าหมาย|หาร)\s*\d+\s*คน\]/gi, "")
+    .trim();
+}
+

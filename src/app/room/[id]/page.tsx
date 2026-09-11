@@ -38,7 +38,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { Room, Member } from "@/types/database";
 import { ShuttleIcon } from "@/components/ShuttleIcon";
-import { getDisplayRoomCode } from "@/lib/roomCode";
+import { getDisplayRoomCode, getCleanTitle } from "@/lib/roomCode";
 import {
   ShinchanAvatar,
   HimawariAvatar,
@@ -357,7 +357,7 @@ export default function RoomPage() {
     return 0;
   };
 
-  const cleanTitle = room ? room.title.replace(/\s*\[เป้าหมาย\s*\d+\s*คน\]/, "").trim() : "";
+  const cleanTitle = room ? getCleanTitle(room.title) : "";
   const targetPlayers = room ? getTargetPlayers(room) : 0;
 
   // Per person amount
