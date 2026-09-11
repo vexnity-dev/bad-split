@@ -7,6 +7,8 @@ export interface Room {
   qr_url: string | null;
   target_players?: number | null;
   per_person_fee?: number | null;
+  passkey?: string | null;
+  host_notes?: string | null;
   created_at?: string;
 }
 
@@ -28,6 +30,8 @@ export interface CreateRoomInput {
   qr_url: string | null;
   target_players?: number | null;
   per_person_fee?: number | null;
+  passkey?: string | null;
+  host_notes?: string | null;
 }
 
 export interface CreateMemberInput {

@@ -14,6 +14,7 @@ import {
   Calculator,
   Trash2,
   Zap,
+  KeyRound,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ShuttleIcon } from "@/components/ShuttleIcon";
@@ -33,6 +34,7 @@ export default function CreateRoomPage() {
   // Form states
   const [title, setTitle] = useState("");
   const [courtFee, setCourtFee] = useState<number | "">("");
+  const [passkey, setPasskey] = useState("");
 
   // Shuttle fee state & calculation mode
   const [shuttleMode, setShuttleMode] = useState<"total" | "units">("total");
@@ -163,7 +165,8 @@ export default function CreateRoomPage() {
           ? `${title.trim()} [เป้าหมาย ${targetPlayersCount} คน]`
           : title.trim();
 
-      // Attempt insert with target_players & per_person_fee if supported by table
+      // Attempt insert with target_players, per_person_fee & passkey if supported by table
+      const trimmedPasskey = passkey.trim();
       const fullPayload: Record<string, unknown> = {
         title: formattedTitle,
         court_fee: parsedCourtFee,
@@ -172,6 +175,7 @@ export default function CreateRoomPage() {
         qr_url: qrUrl,
         target_players: targetPlayersCount > 0 ? targetPlayersCount : null,
         per_person_fee: calculatedPerPerson > 0 ? calculatedPerPerson : null,
+        passkey: trimmedPasskey || null,
       };
 
       let { data: roomData, error: roomError } = await supabase
@@ -180,21 +184,25 @@ export default function CreateRoomPage() {
         .select()
         .single();
 
-      // If columns target_players or per_person_fee don't exist in Supabase schema, retry with standard columns
+      // If columns target_players, per_person_fee, or passkey don't exist in Supabase schema, retry with standard columns
       if (
         roomError &&
         (roomError.message?.includes("target_players") ||
           roomError.message?.includes("per_person_fee") ||
+          roomError.message?.includes("passkey") ||
           roomError.code === "PGRST204")
       ) {
         console.warn("Retrying with base room columns:", roomError.message);
-        const basePayload = {
+        const basePayload: Record<string, unknown> = {
           title: formattedTitle,
           court_fee: parsedCourtFee,
           shuttle_fee: parsedShuttleFee,
           total_fee: totalFee,
           qr_url: qrUrl,
         };
+        if (!roomError.message?.includes("passkey") && trimmedPasskey) {
+          basePayload.passkey = trimmedPasskey;
+        }
 
         const retry = await supabase
           .from("rooms")
@@ -208,6 +216,16 @@ export default function CreateRoomPage() {
 
       if (roomError || !roomData) {
         throw new Error(roomError?.message || "ไม่สามารถสร้างห้องได้ กรุณาลองใหม่อีกครั้ง");
+      }
+
+      // Automatically store creator host status in localStorage
+      try {
+        localStorage.setItem(
+          `badsplit_host_${roomData.id}`,
+          trimmedPasskey || "creator"
+        );
+      } catch (e) {
+        console.warn("Failed to set localStorage host state:", e);
       }
 
       // Redirect to Room Details Page
@@ -301,6 +319,36 @@ export default function CreateRoomPage() {
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="เช่น ก๊วนชินจังวันศุกร์ สนาม Winner คอร์ท 3-4"
                 className="w-full px-4 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Section: Host Passkey / PIN */}
+          <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
+                <div className="w-7 h-7 rounded-xl bg-[#FDD835] flex items-center justify-center text-slate-950 border-2 border-slate-900">
+                  <KeyRound className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <span>รหัสผ่านหัวห้อง (Host PIN)</span>
+              </div>
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-300 dark:border-slate-600">
+                แนะนำ
+              </span>
+            </div>
+
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+              ตั้งรหัส 4-6 หลักเพื่อใช้จัดการห้อง แก้ไขโน้ตก๊วน และลบสลิปผิด (คุณจะเข้าสู่ระบบหัวห้องอัตโนมัติ)
+            </p>
+
+            <div>
+              <input
+                type="text"
+                value={passkey}
+                onChange={(e) => setPasskey(e.target.value)}
+                placeholder="เช่น 1234 หรือ Shin99"
+                maxLength={12}
+                className="w-full px-4 py-2.5 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-black placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm tracking-wider"
               />
             </div>
           </div>

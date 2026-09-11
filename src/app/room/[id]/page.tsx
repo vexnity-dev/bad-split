@@ -28,6 +28,12 @@ import {
   Receipt,
   FileCheck,
   Sparkles,
+  Lock,
+  KeyRound,
+  Pin,
+  Trash2,
+  Save,
+  Crown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Room, Member } from "@/types/database";
@@ -56,6 +62,18 @@ export default function RoomPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Host Role & Authentication states
+  const [isHost, setIsHost] = useState(false);
+  const [showHostLoginModal, setShowHostLoginModal] = useState(false);
+  const [hostPinInput, setHostPinInput] = useState("");
+  const [hostLoginError, setHostLoginError] = useState<string | null>(null);
+  const [hostActionNotice, setHostActionNotice] = useState<string | null>(null);
+
+  // Host Notes states
+  const [hostNotes, setHostNotes] = useState("");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSavedSuccess, setNotesSavedSuccess] = useState(false);
 
   // Form states for member payment submission
   const [memberName, setMemberName] = useState("");
@@ -96,6 +114,25 @@ export default function RoomPage() {
         }
 
         setRoom(roomData as Room);
+
+        // Check host role from localStorage
+        try {
+          const storedKey = localStorage.getItem(`badsplit_host_${roomId}`);
+          if (storedKey) {
+            if (roomData.passkey) {
+              setIsHost(storedKey === roomData.passkey);
+            } else {
+              setIsHost(storedKey === "creator" || Boolean(storedKey));
+            }
+          }
+        } catch (storageErr) {
+          console.warn("Storage check:", storageErr);
+        }
+
+        // Initialize Host Notes
+        if (roomData.host_notes) {
+          setHostNotes(roomData.host_notes);
+        }
 
         // 2. Fetch Members
         const { data: membersData, error: membersError } = await supabase
@@ -146,6 +183,9 @@ export default function RoomPage() {
 
       if (!roomError && roomData) {
         setRoom(roomData as Room);
+        if (roomData.host_notes) {
+          setHostNotes(roomData.host_notes);
+        }
       }
 
       const { data: membersData, error: membersError } = await supabase
@@ -161,6 +201,123 @@ export default function RoomPage() {
       console.error("Failed to refresh room data:", err);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  // Host Login Handler
+  const handleHostLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setHostLoginError(null);
+    const pin = hostPinInput.trim();
+
+    if (!pin) {
+      setHostLoginError("กรุณากรอกรหัสผ่านหัวห้องนะฮะ!");
+      return;
+    }
+
+    // Check passkey
+    if (room?.passkey && pin !== room.passkey) {
+      setHostLoginError("รหัสผ่านไม่ถูกต้องฮะ! ลองตรวจดูอีกครั้งนะ");
+      return;
+    }
+
+    // Success
+    try {
+      localStorage.setItem(`badsplit_host_${roomId}`, pin);
+    } catch (err) {
+      console.warn("LocalStorage save error:", err);
+    }
+
+    setIsHost(true);
+    setShowHostLoginModal(false);
+    setHostPinInput("");
+  };
+
+  // Host Logout Handler
+  const handleHostLogout = () => {
+    try {
+      localStorage.removeItem(`badsplit_host_${roomId}`);
+    } catch (err) {
+      console.warn("LocalStorage remove error:", err);
+    }
+    setIsHost(false);
+  };
+
+  // Save Host Notes
+  const handleSaveNotes = async () => {
+    if (!roomId || !isHost) return;
+    setIsSavingNotes(true);
+    try {
+      const { error: updateError } = await supabase
+        .from("rooms")
+        .update({ host_notes: hostNotes })
+        .eq("id", roomId);
+
+      if (updateError) throw updateError;
+
+      setRoom((prev) => (prev ? { ...prev, host_notes: hostNotes } : null));
+      setNotesSavedSuccess(true);
+      setTimeout(() => setNotesSavedSuccess(false), 2000);
+    } catch (err) {
+      console.error("Failed to save host notes:", err);
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
+
+  // Toggle member paid status (Host only)
+  const handleToggleMemberPaid = async (member: Member) => {
+    if (!isHost) {
+      setHostActionNotice("เฉพาะหัวห้องเท่านั้นที่สามารถเปลี่ยนสถานะได้นะฮะ! (กดปุ่มเข้าสู่ระบบหัวห้องด้านบน)");
+      setTimeout(() => setHostActionNotice(null), 3000);
+      return;
+    }
+
+    const nextPaid = !member.is_paid;
+    // Optimistic update
+    setMembers((prev) =>
+      prev.map((m) => (m.id === member.id ? { ...m, is_paid: nextPaid } : m))
+    );
+
+    try {
+      const { error: updateError } = await supabase
+        .from("members")
+        .update({ is_paid: nextPaid })
+        .eq("id", member.id);
+
+      if (updateError) throw updateError;
+    } catch (err) {
+      console.error("Failed to toggle paid status:", err);
+      // Rollback
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === member.id ? { ...m, is_paid: member.is_paid } : m
+        )
+      );
+    }
+  };
+
+  // Delete member / invalid slip (Host only)
+  const handleDeleteMember = async (member: Member) => {
+    if (!isHost) return;
+
+    const confirmed = window.confirm(`ต้องการลบรายชื่อ "${member.name}" ออกจากก๊วนใช่ไหมฮะ?`);
+    if (!confirmed) return;
+
+    // Optimistic update
+    setMembers((prev) => prev.filter((m) => m.id !== member.id));
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("members")
+        .delete()
+        .eq("id", member.id);
+
+      if (deleteError) throw deleteError;
+    } catch (err) {
+      console.error("Failed to delete member:", err);
+      // Refresh to restore
+      handleRefresh();
     }
   };
 
@@ -393,9 +550,10 @@ export default function RoomPage() {
         `💰 ยอดโอนคนละ: ${perPersonAmount.toLocaleString()} บาท`,
         `📊 เก็บได้แล้ว: ฿${collectedAmount.toLocaleString()} / ฿${totalRoomFee.toLocaleString()} (${paidMembersCount} คน)`,
         paidNames ? `\n✅ คนที่โอนแล้ว (รอดตัวแล้วฮะ):\n${paidNames}` : "\n⏳ ยังไม่มีคนแจ้งโอน (ระวังโดนเขกหัวนะ!)",
+        room.host_notes ? `\n📌 โน้ตจากหัวห้อง:\n${room.host_notes}` : "",
         `\n🔗 กดเพื่อดู QR Code พร้อมเพย์ และส่งสลิปที่นี่:`,
         window.location.href,
-      ].join("\n");
+      ].filter(Boolean).join("\n");
 
       await navigator.clipboard.writeText(text);
       setCopiedLineSummary(true);
@@ -456,7 +614,7 @@ export default function RoomPage() {
       <ShinchanFloatingBackground />
 
       <div className="w-full max-w-xl space-y-5 relative z-10">
-        {/* Navigation Bar with Theme Toggle */}
+        {/* Navigation Bar with Theme Toggle & Host Role Controls */}
         <div className="flex items-center justify-between gap-2">
           <Link
             href="/"
@@ -467,21 +625,63 @@ export default function RoomPage() {
           </Link>
 
           <div className="flex items-center gap-2">
+            {/* Host Status & Login/Logout Button */}
+            {isHost ? (
+              <div className="inline-flex items-center gap-1.5 bg-[#FDD835] text-slate-950 px-2.5 py-1.5 rounded-xl border-2 border-slate-900 font-black text-xs shadow-[2px_2px_0px_#0f172a]">
+                <Crown className="w-3.5 h-3.5 text-[#E53935]" />
+                <span className="hidden sm:inline">หัวห้อง</span>
+                <button
+                  type="button"
+                  onClick={handleHostLogout}
+                  title="ออกจากโหมดหัวห้อง"
+                  className="ml-1 text-[10px] underline text-slate-800 hover:text-black"
+                >
+                  ออก
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowHostLoginModal(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white bg-[#FFF9C4] dark:bg-yellow-950/60 px-3 py-1.5 rounded-xl border-2 border-slate-900 dark:border-yellow-400/60 shadow-[2px_2px_0px_#0f172a] dark:shadow-none hover:bg-[#FFF59D] transition-all cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5 text-[#E53935]" />
+                <span>เข้าสู่ระบบหัวห้อง</span>
+              </button>
+            )}
+
             <ThemeToggle />
 
             <button
               type="button"
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white bg-white dark:bg-[#1a2234] px-3.5 py-2 rounded-xl border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-[2px_2px_0px_#000] hover:bg-[#FFF9C4] dark:hover:bg-slate-800 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-white bg-white dark:bg-[#1a2234] px-3 py-1.5 rounded-xl border-2 border-slate-900 dark:border-slate-700 shadow-[2px_2px_0px_#0f172a] dark:shadow-[2px_2px_0px_#000] hover:bg-[#FFF9C4] dark:hover:bg-slate-800 transition-all active:translate-x-0.5 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#E53935]" : ""}`}
               />
-              <span>รีเฟรช</span>
+              <span className="hidden sm:inline">รีเฟรช</span>
             </button>
           </div>
         </div>
+
+        {/* Action Notice Toast (e.g. when guest tries to toggle status) */}
+        {hostActionNotice && (
+          <div className="p-3 rounded-2xl bg-[#FFF9C4] border-2 border-slate-900 text-slate-950 text-xs font-black shadow-[3px_3px_0px_#0f172a] flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-[#E53935] shrink-0" />
+              <span>{hostActionNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowHostLoginModal(true)}
+              className="px-2 py-1 bg-[#E53935] text-white rounded-lg text-[11px] font-black shrink-0"
+            >
+              เข้าสู่ระบบ
+            </button>
+          </div>
+        )}
 
         {/* Room Header Comic Card */}
         <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] relative overflow-hidden">
@@ -495,6 +695,12 @@ export default function RoomPage() {
                 {targetPlayers > 0 && (
                   <span className="text-xs font-black text-white bg-[#E53935] border-2 border-slate-900 px-3 py-1 rounded-full shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                     เป้าหมาย {targetPlayers} คน
+                  </span>
+                )}
+                {isHost && (
+                  <span className="text-xs font-black text-slate-950 bg-[#FDD835] border-2 border-slate-900 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <Crown className="w-3 h-3 text-[#E53935]" />
+                    <span>คุณคือหัวห้อง</span>
                   </span>
                 )}
               </div>
@@ -538,6 +744,95 @@ export default function RoomPage() {
               </span>
             </div>
           </div>
+        </div>
+
+        {/* ======================================================== */}
+        {/* Host Note & Announcements Card (Shin-chan Memo Pad) */}
+        {/* ======================================================== */}
+        <div className="bg-[#FFF9C4] dark:bg-[#1a2538] rounded-3xl p-5 border-3 border-slate-900 dark:border-yellow-400/80 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] relative space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Pin className="w-4 h-4 text-[#E53935] fill-current transform -rotate-12" />
+              <h2 className="text-sm font-black text-slate-950 dark:text-white">
+                โน้ตจากหัวห้อง / สรุปก๊วน 📢
+              </h2>
+            </div>
+            {isHost && (
+              <span className="text-[10px] font-black bg-[#E53935] text-white px-2 py-0.5 rounded-full">
+                โหมดแก้ไข
+              </span>
+            )}
+          </div>
+
+          {isHost ? (
+            <div className="space-y-2.5">
+              <textarea
+                rows={3}
+                value={hostNotes}
+                onChange={(e) => setHostNotes(e.target.value)}
+                placeholder="พิมพ์โน้ตก๊วน เช่น 'ขาดเงิน: สมชาย, แนน' หรือ 'ตารางตี: คอร์ท 3 ทีม A ปะทะ ทีม B'"
+                className="w-full p-3 bg-white dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#E53935]"
+              />
+
+              {/* Quick Snippet Buttons */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">แทรกด่วน:</span>
+                {[
+                  "+ ขาดเงิน: ",
+                  "+ คอร์ท 3-4 ",
+                  "+ ตารางตี: ",
+                ].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setHostNotes((prev) => (prev ? `${prev}\n${tag}` : tag))}
+                    className="text-[11px] font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded-lg border border-slate-400 dark:border-slate-600 hover:bg-slate-100"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                {notesSavedSuccess ? (
+                  <span className="text-xs font-black text-[#2E7D32] dark:text-emerald-300 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    บันทึกโน้ตสำเร็จแล้วฮะ! 📝
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400 font-bold">
+                    ทุกคนในก๊วนจะเห็นโน้ตนี้
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveNotes}
+                  disabled={isSavingNotes}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingNotes ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FDD835]" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  <span>บันทึกโน้ต</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {room.host_notes ? (
+                <div className="whitespace-pre-wrap text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 bg-white/80 dark:bg-slate-900/80 p-3.5 rounded-2xl border-2 border-slate-900 dark:border-slate-700">
+                  {room.host_notes}
+                </div>
+              ) : (
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 italic">
+                  ยังไม่มีประกาศจากหัวห้องฮะ
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Comic 2-Tab Switcher */}
@@ -946,7 +1241,7 @@ export default function RoomPage() {
                           </div>
                         </div>
 
-                        {/* Slip preview & status badge */}
+                        {/* Slip preview, status & Host controls */}
                         <div className="flex items-center gap-2 shrink-0">
                           {member.slip_url ? (
                             <button
@@ -962,10 +1257,32 @@ export default function RoomPage() {
                             </button>
                           ) : null}
 
-                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-xl bg-[#E8F5E9] dark:bg-emerald-950/80 text-[#2E7D32] dark:text-emerald-300 border-2 border-[#43A047]">
+                          {/* Payment status badge (clickable toggle for Host) */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMemberPaid(member)}
+                            className={`inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-xl border-2 transition-all select-none ${
+                              member.is_paid
+                                ? "bg-[#E8F5E9] dark:bg-emerald-950/80 text-[#2E7D32] dark:text-emerald-300 border-[#43A047]"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-400"
+                            } ${isHost ? "cursor-pointer hover:scale-105 active:scale-95" : "cursor-default"}`}
+                            title={isHost ? "แตะเพื่อสลับสถานะ" : undefined}
+                          >
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
-                            <span>จ่ายแล้วจ้า! ✨</span>
-                          </span>
+                            <span>{member.is_paid ? "จ่ายแล้วจ้า! ✨" : "ยังไม่จ่าย"}</span>
+                          </button>
+
+                          {/* Host Delete Button */}
+                          {isHost && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMember(member)}
+                              title="ลบรายชื่อนี้ (เฉพาะหัวห้อง)"
+                              className="p-1.5 text-slate-400 hover:text-[#E53935] hover:bg-[#FFEBEE] dark:hover:bg-red-950/40 rounded-lg border border-transparent hover:border-[#E53935] transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1073,6 +1390,82 @@ export default function RoomPage() {
                   ปิดหน้าต่าง
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Host Login Modal */}
+        {showHostLoginModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white dark:bg-[#1a2234] border-4 border-slate-900 dark:border-[#FDD835] rounded-3xl max-w-sm w-full p-5 shadow-[8px_8px_0px_0px_#0f172a] dark:shadow-[8px_8px_0px_0px_#FDD835] space-y-4 relative">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-[#FDD835] flex items-center justify-center border-2 border-slate-900">
+                    <KeyRound className="w-4 h-4 text-slate-900" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-950 dark:text-white">
+                      เข้าสู่ระบบหัวห้อง 👑
+                    </h3>
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      Host Authentication
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHostLoginModal(false);
+                    setHostLoginError(null);
+                  }}
+                  className="p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-900 dark:border-slate-600 hover:bg-slate-200 text-slate-900 dark:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                กรอกรหัสผ่าน PIN ที่ตั้งไว้ตอนสร้างห้อง เพื่อแก้ไขประกาศโน้ต และจัดการรายชื่อ
+              </p>
+
+              {hostLoginError && (
+                <div className="p-3 rounded-xl bg-[#FFEBEE] dark:bg-[#3b1219] border-2 border-[#E53935] text-[#C62828] dark:text-[#ff8a80] text-xs font-bold flex items-center gap-2 shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-[#E53935]" />
+                  <span>{hostLoginError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleHostLogin} className="space-y-3.5">
+                <div>
+                  <input
+                    type="password"
+                    autoFocus
+                    value={hostPinInput}
+                    onChange={(e) => setHostPinInput(e.target.value)}
+                    placeholder="ใส่รหัสผ่านหัวห้อง"
+                    className="w-full px-4 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-black placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] text-center text-lg tracking-widest"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHostLoginModal(false);
+                      setHostLoginError(null);
+                    }}
+                    className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-xs border-2 border-slate-900 dark:border-slate-700 hover:bg-slate-200 cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all cursor-pointer"
+                  >
+                    เข้าสู่ระบบ
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
