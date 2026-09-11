@@ -9,7 +9,9 @@ export interface Room {
   per_person_fee?: number | null;
   passkey?: string | null;
   host_notes?: string | null;
+  room_code?: string | null;
   created_at?: string;
+  members?: { id: string; is_paid: boolean }[];
 }
 
 export interface Member {
@@ -32,6 +34,7 @@ export interface CreateRoomInput {
   per_person_fee?: number | null;
   passkey?: string | null;
   host_notes?: string | null;
+  room_code?: string | null;
 }
 
 export interface CreateMemberInput {

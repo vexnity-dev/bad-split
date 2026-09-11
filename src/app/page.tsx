@@ -20,13 +20,19 @@ import {
   History,
   QrCode,
   Users,
-  CheckCircle2,
   ChevronRight,
   Crown,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Room } from "@/types/database";
 import { ShuttleIcon } from "@/components/ShuttleIcon";
+import {
+  getDisplayRoomCode,
+  generateRoomCode,
+  formatRelativeTime,
+} from "@/lib/roomCode";
 import {
   ShinchanAvatar,
   ChocobiStar,
@@ -77,20 +83,22 @@ export default function HomePage() {
     return [];
   });
 
-  // Join Room State
-  const [joinInput, setJoinInput] = useState("");
-  const [isJoining, setIsJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [publicRooms, setPublicRooms] = useState<Room[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoadingPublicRooms, setIsLoadingPublicRooms] = useState(
-    pageMode === "join"
-  );
+  // Active Public Rooms List
+  const [activeRooms, setActiveRooms] = useState<Room[]>([]);
+  const [isLoadingActiveRooms, setIsLoadingActiveRooms] = useState(true);
+  const [isRefreshingActiveRooms, setIsRefreshingActiveRooms] = useState(false);
+  const [activeRoomsSearch, setActiveRoomsSearch] = useState("");
+
+  // Room Code Search Bar on Homepage
+  const [roomCodeInput, setRoomCodeInput] = useState("");
+  const [isSearchingCode, setIsSearchingCode] = useState(false);
+  const [codeSearchError, setCodeSearchError] = useState<string | null>(null);
 
   // Form states (Create Room)
   const [title, setTitle] = useState("");
   const [courtFee, setCourtFee] = useState<number | "">("");
   const [passkey, setPasskey] = useState("");
+  const [generatedCode, setGeneratedCode] = useState(() => generateRoomCode());
 
   // Shuttle fee state & calculation mode
   const [shuttleMode, setShuttleMode] = useState<"total" | "units">("total");
@@ -111,45 +119,89 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Fetch recent public rooms when entering join mode
+  // Fetch active rooms on mount
   useEffect(() => {
     let isMounted = true;
-    if (pageMode === "join") {
-      Promise.resolve(
-        supabase
-          .from("rooms")
-          .select(
-            "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, created_at"
-          )
-          .order("created_at", { ascending: false })
-          .limit(8)
-      )
-        .then(({ data, error }) => {
-          if (!isMounted) return;
-          if (!error && data) {
-            setPublicRooms(data as Room[]);
-          }
-          setIsLoadingPublicRooms(false);
-        })
-        .catch((err: unknown) => {
-          console.warn("Failed to fetch public rooms:", err);
-          if (isMounted) setIsLoadingPublicRooms(false);
-        });
-    }
+    Promise.resolve(
+      supabase
+        .from("rooms")
+        .select(
+          "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, room_code, created_at, members(id, is_paid)"
+        )
+        .order("created_at", { ascending: false })
+        .limit(10)
+    )
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (!error && data) {
+          setActiveRooms(data as Room[]);
+        } else if (error) {
+          // Fallback if room_code column doesn't exist yet
+          Promise.resolve(
+            supabase
+              .from("rooms")
+              .select(
+                "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, created_at, members(id, is_paid)"
+              )
+              .order("created_at", { ascending: false })
+              .limit(10)
+          ).then(({ data: fallbackData }) => {
+            if (!isMounted) return;
+            if (fallbackData) {
+              setActiveRooms(fallbackData as Room[]);
+            }
+          });
+        }
+        setIsLoadingActiveRooms(false);
+      })
+      .catch((err: unknown) => {
+        console.warn("Failed to load active rooms:", err);
+        if (isMounted) setIsLoadingActiveRooms(false);
+      });
 
     return () => {
       isMounted = false;
     };
-  }, [pageMode]);
+  }, []);
+
+  // Refresh active rooms
+  const handleRefreshActiveRooms = async () => {
+    setIsRefreshingActiveRooms(true);
+    try {
+      const { data, error } = await supabase
+        .from("rooms")
+        .select(
+          "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, room_code, created_at, members(id, is_paid)"
+        )
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (!error && data) {
+        setActiveRooms(data as Room[]);
+      } else {
+        const fallback = await supabase
+          .from("rooms")
+          .select(
+            "id, title, court_fee, shuttle_fee, total_fee, per_person_fee, target_players, created_at, members(id, is_paid)"
+          )
+          .order("created_at", { ascending: false })
+          .limit(10);
+        if (fallback.data) {
+          setActiveRooms(fallback.data as Room[]);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to refresh active rooms:", e);
+    } finally {
+      setIsRefreshingActiveRooms(false);
+    }
+  };
 
   // Change page mode and synchronize URL
   const changeMode = (newMode: PageMode) => {
     setPageMode(newMode);
     setErrorMessage(null);
-    setJoinError(null);
-    if (newMode === "join") {
-      setIsLoadingPublicRooms(true);
-    }
+    setCodeSearchError(null);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       if (newMode === "select") {
@@ -161,45 +213,93 @@ export default function HomePage() {
     }
   };
 
-  // Helper to extract room ID from URL or input string
+  // Helper to extract room ID or code from URL or input string
   const extractRoomId = (input: string): string => {
     const trimmed = input.trim();
-    const match = trimmed.match(/\/room\/([a-zA-Z0-9_-]+)/);
+    const match = trimmed.match(/\/room\/([a-zA-Z0-9_-]+)/i);
     if (match && match[1]) {
       return match[1];
     }
     return trimmed;
   };
 
-  // Handle Joining Room by code or link
-  const handleJoinSubmit = async (e?: React.FormEvent) => {
+  // Search and Join Room by Code or URL
+  const handleSearchRoomCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setJoinError(null);
-
-    const cleanId = extractRoomId(joinInput);
-    if (!cleanId) {
-      setJoinError("กรุณากรอกรหัสห้องหรือวางลิงก์นะฮะ!");
+    const raw = roomCodeInput.trim();
+    if (!raw) {
+      setCodeSearchError("กรุณากรอกรหัสก๊วนนะฮะ!");
       return;
     }
 
-    setIsJoining(true);
-    try {
-      const { data, error } = await supabase
-        .from("rooms")
-        .select("id, title")
-        .eq("id", cleanId)
-        .single();
+    setIsSearchingCode(true);
+    setCodeSearchError(null);
 
-      if (error || !data) {
-        setJoinError("ไม่พบห้องนี้ฮะ! กรุณาตรวจสอบรหัสห้องหรือลิงก์อีกครั้ง");
-        setIsJoining(false);
+    try {
+      const cleanTarget = extractRoomId(raw).toUpperCase();
+
+      // 1. Check in locally loaded active rooms first for instant navigation
+      const localMatch = activeRooms.find((r) => {
+        const dCode = getDisplayRoomCode(r).toUpperCase();
+        return (
+          dCode === cleanTarget ||
+          r.id.toLowerCase() === raw.toLowerCase() ||
+          r.id.replace(/-/g, "").toLowerCase().startsWith(raw.toLowerCase())
+        );
+      });
+
+      if (localMatch) {
+        router.push(`/room/${localMatch.id}`);
         return;
       }
 
-      router.push(`/room/${data.id}`);
+      // 2. Query Supabase by room_code column
+      try {
+        const { data: codeData } = await supabase
+          .from("rooms")
+          .select("id, title")
+          .eq("room_code", cleanTarget)
+          .single();
+
+        if (codeData) {
+          router.push(`/room/${codeData.id}`);
+          return;
+        }
+      } catch {
+        // column might not exist
+      }
+
+      // 3. Query by UUID prefix or exact ID
+      const { data: idData } = await supabase
+        .from("rooms")
+        .select("id, title")
+        .ilike("id", `${raw.toLowerCase()}%`)
+        .limit(1);
+
+      if (idData && idData.length > 0) {
+        router.push(`/room/${idData[0].id}`);
+        return;
+      }
+
+      // 4. Query by title containing [CODE:...] or title substring
+      const { data: titleData } = await supabase
+        .from("rooms")
+        .select("id, title")
+        .or(`title.ilike.%[CODE:${cleanTarget}]%,title.ilike.%${cleanTarget}%`)
+        .limit(1);
+
+      if (titleData && titleData.length > 0) {
+        router.push(`/room/${titleData[0].id}`);
+        return;
+      }
+
+      setCodeSearchError(
+        `ไม่พบห้องรหัส "${raw}" ฮะ! กรุณาตรวจสอบรหัสหรือลองเลือกจากรายการด้านล่าง`
+      );
+      setIsSearchingCode(false);
     } catch {
-      setJoinError("เกิดข้อผิดพลาดในการตรวจสอบห้อง กรุณาลองใหม่อีกครั้ง");
-      setIsJoining(false);
+      setCodeSearchError("เกิดข้อผิดพลาดในการค้นหาห้อง กรุณาลองใหม่อีกครั้ง");
+      setIsSearchingCode(false);
     }
   };
 
@@ -328,13 +428,13 @@ export default function HomePage() {
         qrUrl = await uploadQrCode();
       }
 
-      // Title encoding helper so room page always knows target players count
-      const formattedTitle =
-        targetPlayersCount > 0 && !title.includes("คน")
-          ? `${title.trim()} [เป้าหมาย ${targetPlayersCount} คน]`
-          : title.trim();
+      // Title encoding helper with target players and room code fallback
+      let formattedTitle = title.trim();
+      if (targetPlayersCount > 0 && !formattedTitle.includes("คน")) {
+        formattedTitle = `${formattedTitle} [เป้าหมาย ${targetPlayersCount} คน]`;
+      }
+      formattedTitle = `${formattedTitle} [CODE:${generatedCode}]`;
 
-      // Attempt insert with target_players, per_person_fee & passkey if supported by table
       const trimmedPasskey = passkey.trim();
       const fullPayload: Record<string, unknown> = {
         title: formattedTitle,
@@ -345,6 +445,7 @@ export default function HomePage() {
         target_players: targetPlayersCount > 0 ? targetPlayersCount : null,
         per_person_fee: calculatedPerPerson > 0 ? calculatedPerPerson : null,
         passkey: trimmedPasskey || null,
+        room_code: generatedCode,
       };
 
       let { data: roomData, error: roomError } = await supabase
@@ -353,10 +454,11 @@ export default function HomePage() {
         .select()
         .single();
 
-      // Fallback if schema doesn't have newer columns yet
+      // Fallback if schema doesn't have newer columns (room_code, passkey, target_players, etc.)
       if (
         roomError &&
-        (roomError.message?.includes("target_players") ||
+        (roomError.message?.includes("room_code") ||
+          roomError.message?.includes("target_players") ||
           roomError.message?.includes("per_person_fee") ||
           roomError.message?.includes("passkey") ||
           roomError.code === "PGRST204")
@@ -430,19 +532,22 @@ export default function HomePage() {
     }
   };
 
-  // Filter public rooms by search query
-  const filteredPublicRooms = publicRooms.filter((r) =>
-    r.title?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter active rooms by title or room code
+  const filteredActiveRooms = activeRooms.filter((r) => {
+    const code = getDisplayRoomCode(r).toLowerCase();
+    const q = activeRoomsSearch.toLowerCase().trim();
+    if (!q) return true;
+    return r.title?.toLowerCase().includes(q) || code.includes(q);
+  });
 
   return (
     <div className="min-h-screen relative flex flex-col items-center py-6 px-4 sm:px-6">
       {/* Floating Nohara Family Ambient Background */}
       <ShinchanFloatingBackground />
 
-      <div className="w-full max-w-xl relative z-10">
+      <div className="w-full max-w-xl relative z-10 space-y-6">
         {/* Top Bar with Badge and Theme Toggle */}
-        <div className="w-full flex items-center justify-between mb-4">
+        <div className="w-full flex items-center justify-between">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#FDD835] dark:bg-[#1e293b] border-2 border-slate-900 dark:border-[#FDD835] text-slate-950 dark:text-[#FDD835] text-[11px] font-black uppercase tracking-wider shadow-[2px_2px_0px_#0f172a] dark:shadow-[2px_2px_0px_#000]">
             <ShinchanAvatar className="w-4 h-4 -ml-1" />
             <span>Bad-Split x Shin-chan</span>
@@ -453,7 +558,7 @@ export default function HomePage() {
         </div>
 
         {/* ========================================================================= */}
-        {/* MODE 1: SELECT (Choice Screen - สร้างห้อง หรือ เข้าไปจ่าย) */}
+        {/* MODE 1: SELECT (Landing Discovery Screen - สร้างห้อง / ค้นหารหัส / ก๊วนที่เปิดอยู่) */}
         {/* ========================================================================= */}
         {pageMode === "select" && (
           <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
@@ -470,38 +575,96 @@ export default function HomePage() {
               <div className="mt-3 relative inline-block max-w-md bg-white dark:bg-[#1a2234] border-3 border-slate-900 dark:border-[#FDD835] rounded-2xl px-4 py-3 shadow-[4px_4px_0px_#0f172a] dark:shadow-[4px_4px_0px_#FDD835]">
                 <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1.5">
                   <span>
-                    ยินดีต้อนรับสู่ก๊วนแบดมินตันฮะ! วันนี้จะมาเปิดห้องใหม่ หรือจะมาจ่ายตังค์ดีนะ?
+                    ยินดีต้อนรับสู่ก๊วนแบดฮะ! ใส่รหัสก๊วน หรือเลือกห้องที่กำลังเล่นอยู่ได้เลย!
                   </span>
                 </p>
-                {/* Bubble arrow pointing up */}
                 <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-[#1a2234] border-t-3 border-l-3 border-slate-900 dark:border-[#FDD835] transform rotate-45" />
               </div>
             </header>
 
-            {/* Two Primary Action Cards */}
+            {/* Option B: Direct Room Code Search Bar */}
+            <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] relative overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-sm sm:text-base">
+                  <div className="w-7 h-7 rounded-xl bg-[#FDD835] border-2 border-slate-900 flex items-center justify-center text-slate-950 shadow-[1px_1px_0px_#0f172a]">
+                    <KeyRound className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                  <span>ค้นหาด้วยรหัสก๊วน (Room Code)</span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-[#E8F5E9] dark:bg-emerald-950 text-[#2E7D32] dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500">
+                  เข้าร่วมด่วน
+                </span>
+              </div>
+
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-400 mb-3">
+                เพื่อนในคอร์ทบอกรหัสมา? พิมพ์รหัส 4-6 หลักแล้วกดเข้าห้องได้ทันทีเลยฮะ!
+              </p>
+
+              {codeSearchError && (
+                <div className="mb-3 p-3 rounded-xl bg-[#FFEBEE] dark:bg-[#3b1219] border-2 border-[#E53935] text-[#C62828] dark:text-[#ff8a80] text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{codeSearchError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSearchRoomCode} className="space-y-2.5">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={roomCodeInput}
+                      onChange={(e) => setRoomCodeInput(e.target.value)}
+                      placeholder="ใส่รหัสก๊วน เช่น BAD88, SHIN01..."
+                      className="w-full px-4 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-black uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#FDD835] text-sm"
+                    />
+                    {roomCodeInput && (
+                      <button
+                        type="button"
+                        onClick={() => setRoomCodeInput("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black dark:hover:text-white p-1"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSearchingCode || !roomCodeInput.trim()}
+                    className="px-5 py-3 rounded-2xl bg-[#E53935] hover:bg-[#D32F2F] text-[#FDD835] font-black text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isSearchingCode ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#FDD835]" />
+                    ) : (
+                      <>
+                        <span>เข้าร่วมทันที</span>
+                        <ArrowRight className="w-4 h-4 stroke-[3]" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Two Primary Action Cards: Create Room & Enter via Link */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Option 1: Create Room (สำหรับหัวห้อง) */}
+              {/* Option 1: Create Room */}
               <div
                 onClick={() => changeMode("create")}
                 className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[8px_8px_0px_0px_#0f172a] dark:hover:shadow-[8px_8px_0px_0px_#FDD835] transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
               >
-                {/* Comic Corner Flash */}
-                <div className="absolute -top-6 -right-6 w-16 h-16 bg-[#FDD835] rotate-45 border-b-2 border-slate-900 flex items-end justify-center pb-1">
-                  <Sparkles className="w-3.5 h-3.5 text-slate-900" />
-                </div>
-
                 <div>
                   <div className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider bg-[#E53935] text-[#FDD835] px-2.5 py-0.5 rounded-full border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] mb-3">
                     <Crown className="w-3.5 h-3.5" />
                     <span>สำหรับหัวห้อง</span>
                   </div>
 
-                  <div className="flex items-center gap-3 my-2">
-                    <div className="w-12 h-12 rounded-2xl bg-[#E53935] border-3 border-slate-900 flex items-center justify-center text-white shadow-[3px_3px_0px_#0f172a] group-hover:scale-105 transition-transform">
-                      <ShuttleIcon className="w-6 h-6" />
+                  <div className="flex items-center gap-3 my-1">
+                    <div className="w-11 h-11 rounded-2xl bg-[#E53935] border-3 border-slate-900 flex items-center justify-center text-white shadow-[2px_2px_0px_#0f172a] group-hover:scale-105 transition-transform">
+                      <ShuttleIcon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-black text-slate-950 dark:text-white leading-tight">
+                      <h2 className="text-base sm:text-lg font-black text-slate-950 dark:text-white leading-tight">
                         สร้างห้องก๊วนใหม่
                       </h2>
                       <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
@@ -510,58 +673,38 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
-                    คำนวณค่าคอร์ท ค่าลูกแบด ใส่ PromptPay QR และตั้งรหัส PIN หัวห้องเพื่อจัดการห้อง
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300 mt-2">
+                    คำนวณค่าคอร์ท ลูกแบด รับรหัสห้อง BAD88 และใส่ QR พร้อมเพย์
                   </p>
-
-                  <div className="space-y-1.5 my-3 pt-2 border-t-2 border-dashed border-slate-200 dark:border-slate-700">
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#43A047]" />
-                      <span>คิดยอดหารต่อคนให้อัตโนมัติ</span>
-                    </div>
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#43A047]" />
-                      <span>แนบ QR รับเงินของหัวห้อง</span>
-                    </div>
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#43A047]" />
-                      <span>มีรหัส PIN ป้องกันคนอื่นแก้ไข</span>
-                    </div>
-                  </div>
                 </div>
 
                 <button
                   type="button"
-                  className="w-full mt-3 py-3 px-4 rounded-2xl bg-[#E53935] text-[#FDD835] font-black text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] group-hover:shadow-[4px_4px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full mt-3 py-2.5 px-4 rounded-2xl bg-[#E53935] text-[#FDD835] font-black text-xs sm:text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] group-hover:shadow-[4px_4px_0px_#0f172a] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <span>เปิดห้องก๊วนเลยฮะ!</span>
                   <ArrowRight className="w-4 h-4 stroke-[3]" />
                 </button>
               </div>
 
-              {/* Option 2: Enter to Pay (สำหรับสมาชิก) */}
+              {/* Option 2: Enter to Pay / Paste Link */}
               <div
                 onClick={() => changeMode("join")}
                 className="bg-gradient-to-br from-[#E8F5E9] via-white to-[#C8E6C9] dark:from-[#0f2818] dark:via-[#163a23] dark:to-[#0a1e12] rounded-3xl p-5 border-4 border-[#43A047] dark:border-emerald-400 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#34d399] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[8px_8px_0px_0px_#0f172a] dark:hover:shadow-[8px_8px_0px_0px_#34d399] transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
               >
-                {/* Comic Corner Flash */}
-                <div className="absolute -top-6 -right-6 w-16 h-16 bg-[#43A047] rotate-45 border-b-2 border-slate-900 flex items-end justify-center pb-1">
-                  <Zap className="w-3.5 h-3.5 text-white" />
-                </div>
-
                 <div>
                   <div className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider bg-[#43A047] text-white px-2.5 py-0.5 rounded-full border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] mb-3">
                     <QrCode className="w-3.5 h-3.5" />
                     <span>สำหรับสมาชิก / คนเล่น</span>
                   </div>
 
-                  <div className="flex items-center gap-3 my-2">
-                    <div className="w-12 h-12 rounded-2xl bg-[#43A047] border-3 border-slate-900 flex items-center justify-center text-white shadow-[3px_3px_0px_#0f172a] group-hover:scale-105 transition-transform">
-                      <CreditCard className="w-6 h-6" />
+                  <div className="flex items-center gap-3 my-1">
+                    <div className="w-11 h-11 rounded-2xl bg-[#43A047] border-3 border-slate-900 flex items-center justify-center text-white shadow-[2px_2px_0px_#0f172a] group-hover:scale-105 transition-transform">
+                      <CreditCard className="w-5 h-5" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-black text-slate-950 dark:text-white leading-tight">
-                        เข้าไปจ่ายเงิน / ดูก๊วน
+                      <h2 className="text-base sm:text-lg font-black text-slate-950 dark:text-white leading-tight">
+                        วางลิงก์เพื่อเข้าห้อง
                       </h2>
                       <p className="text-[11px] font-bold text-[#2E7D32] dark:text-emerald-300">
                         สแกน QR & แนบสลิป
@@ -569,37 +712,147 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <p className="text-xs font-bold text-slate-700 dark:text-emerald-100 mt-2 leading-relaxed">
-                    มีลิงก์หรือรหัสห้องแล้วใช่ไหม? เข้าไปสแกนจ่ายเงิน แนบสลิป และเช็คชื่อได้ทันที!
+                  <p className="text-xs font-bold text-slate-700 dark:text-emerald-100 mt-2">
+                    มีลิงก์ยาวๆ จาก LINE ใช่ไหม? วางลิงก์เพื่อเข้าห้องได้ทันที
                   </p>
-
-                  <div className="space-y-1.5 my-3 pt-2 border-t-2 border-dashed border-[#A5D6A7] dark:border-emerald-700/60">
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-emerald-100 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2E7D32] dark:text-emerald-400" />
-                      <span>วางลิงก์ห้องเพื่อเข้าได้ทันที</span>
-                    </div>
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-emerald-100 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2E7D32] dark:text-emerald-400" />
-                      <span>สแกน QR พร้อมเพย์หัวห้อง</span>
-                    </div>
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-emerald-100 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#2E7D32] dark:text-emerald-400" />
-                      <span>เช็ครายชื่อคนจ่ายแบบเรียลไทม์</span>
-                    </div>
-                  </div>
                 </div>
 
                 <button
                   type="button"
-                  className="w-full mt-3 py-3 px-4 rounded-2xl bg-[#43A047] hover:bg-[#388E3C] text-white font-black text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] group-hover:shadow-[4px_4px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full mt-3 py-2.5 px-4 rounded-2xl bg-[#43A047] hover:bg-[#388E3C] text-white font-black text-xs sm:text-sm border-3 border-slate-900 shadow-[3px_3px_0px_#0f172a] group-hover:shadow-[4px_4px_0px_#0f172a] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>เข้าห้องไปจ่ายเงิน</span>
+                  <span>วางลิงก์เข้าห้อง</span>
                   <ArrowRight className="w-4 h-4 stroke-[3]" />
                 </button>
               </div>
             </div>
 
-            {/* Recent Rooms Section (If any) */}
+            {/* Option A: "ห้องก๊วนที่กำลังเปิดอยู่" (Public Active Rooms List) */}
+            <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
+                  <div className="w-7 h-7 rounded-xl bg-[#E53935] border-2 border-slate-900 flex items-center justify-center text-white shadow-[1px_1px_0px_#0f172a]">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <span>ห้องก๊วนที่กำลังเปิดอยู่</span>
+                  <span className="flex h-2.5 w-2.5 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRefreshActiveRooms}
+                  disabled={isRefreshingActiveRooms}
+                  title="รีเฟรชก๊วนแบด"
+                  className="inline-flex items-center gap-1 text-[11px] font-black text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 ${
+                      isRefreshingActiveRooms ? "animate-spin text-[#E53935]" : ""
+                    }`}
+                  />
+                  <span>รีเฟรช</span>
+                </button>
+              </div>
+
+              {/* Live Search Filter Box */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={activeRoomsSearch}
+                  onChange={(e) => setActiveRoomsSearch(e.target.value)}
+                  placeholder="ค้นหาก๊วนตามชื่อ หรือรหัสห้อง (เช่น BAD88)..."
+                  className="w-full pl-9 pr-4 py-2 bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-600 rounded-xl text-slate-950 dark:text-white font-bold placeholder-slate-400 text-xs focus:outline-none focus:ring-1 focus:ring-[#E53935]"
+                />
+              </div>
+
+              {isLoadingActiveRooms ? (
+                <div className="py-8 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#E53935]" />
+                  <span>กำลังค้นหาก๊วนแบดที่กำลังเปิดอยู่...</span>
+                </div>
+              ) : filteredActiveRooms.length > 0 ? (
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {filteredActiveRooms.map((room) => {
+                    const roomCode = getDisplayRoomCode(room);
+                    const paidCount = room.members
+                      ? room.members.filter((m) => m.is_paid).length
+                      : 0;
+                    const cleanTitle = room.title
+                      .replace(/\s*\[CODE:[^\]]+\]/gi, "")
+                      .replace(/\s*\[เป้าหมาย\s*\d+\s*คน\]/gi, "")
+                      .trim();
+
+                    return (
+                      <div
+                        key={room.id}
+                        onClick={() => router.push(`/room/${room.id}`)}
+                        className="p-3.5 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-700 hover:border-[#E53935] dark:hover:border-[#FDD835] shadow-[3px_3px_0px_#0f172a] dark:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            {/* Room Code Badge */}
+                            <span className="font-mono text-xs font-black bg-[#FDD835] text-slate-950 px-2 py-0.5 rounded-lg border border-slate-900 shadow-[1px_1px_0px_#0f172a]">
+                              รหัส: {roomCode}
+                            </span>
+
+                            {/* Relative creation time */}
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {formatRelativeTime(room.created_at)}
+                            </span>
+                          </div>
+
+                          <h3 className="text-sm font-black text-slate-950 dark:text-white truncate group-hover:text-[#E53935] dark:group-hover:text-[#FDD835] transition-colors">
+                            {cleanTitle}
+                          </h3>
+
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs font-bold">
+                            {/* Fee Badge */}
+                            {room.per_person_fee ? (
+                              <span className="text-[#E53935] dark:text-[#FDD835] font-black bg-[#FFEBEE] dark:bg-[#3b1219] px-2 py-0.5 rounded-md border border-[#E53935]/30">
+                                ฿{room.per_person_fee}/คน
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 dark:text-slate-300">
+                                ยอดรวม ฿{room.total_fee.toLocaleString()}
+                              </span>
+                            )}
+
+                            {/* Paid Members Badge */}
+                            <span className="text-[#2E7D32] dark:text-emerald-400 bg-[#E8F5E9] dark:bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/40">
+                              {room.target_players && room.target_players > 0
+                                ? `จ่ายแล้ว ${paidCount}/${room.target_players} คน ✨`
+                                : `จ่ายแล้ว ${paidCount} คน ✨`}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bold Shin-chan Action Button */}
+                        <button
+                          type="button"
+                          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#E53935] text-[#FDD835] font-black text-xs border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] group-hover:bg-[#D32F2F] group-hover:shadow-[3px_3px_0px_#0f172a] transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <span>เข้าร่วมก๊วนนี้</span>
+                          <ShuttleIcon className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-xs font-bold text-slate-400">
+                  {activeRoomsSearch
+                    ? "ไม่พบก๊วนที่ตรงกับคำค้นหาฮะ"
+                    : "ยังไม่มีก๊วนที่เปิดล่าสุดใน 24-48 ชั่วโมงนี้ฮะ"}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Rooms Section (If any exist in localStorage) */}
             {recentRooms.length > 0 && (
               <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
                 <div className="flex items-center justify-between">
@@ -617,7 +870,7 @@ export default function HomePage() {
                 </div>
 
                 <div className="space-y-2">
-                  {recentRooms.slice(0, 4).map((r) => (
+                  {recentRooms.slice(0, 3).map((r) => (
                     <div
                       key={r.id}
                       onClick={() => router.push(`/room/${r.id}`)}
@@ -658,7 +911,7 @@ export default function HomePage() {
         )}
 
         {/* ========================================================================= */}
-        {/* MODE 2: JOIN (เข้าไปจ่ายเงิน - วางลิงก์ / ค้นหาห้อง) */}
+        {/* MODE 2: JOIN (วางลิงก์ห้อง / อัปโหลดสลิป) */}
         {/* ========================================================================= */}
         {pageMode === "join" && (
           <div className="space-y-5 animate-in fade-in zoom-in-95 duration-200">
@@ -674,31 +927,31 @@ export default function HomePage() {
               </button>
 
               <span className="text-[11px] font-black bg-[#43A047] text-white px-3 py-1 rounded-full border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a]">
-                โหมดเข้าไปจ่ายเงิน 💸
+                โหมดวางลิงก์เข้าห้อง 💸
               </span>
             </div>
 
             {/* Comic Banner */}
             <header className="text-center">
               <h1 className="text-2xl sm:text-3xl font-black text-slate-950 dark:text-white tracking-tight flex items-center justify-center gap-2">
-                <span>เข้าห้องเพื่อจ่ายเงิน</span>
+                <span>วางลิงก์ห้องเพื่อจ่ายเงิน</span>
                 <span className="text-[#43A047]">📱</span>
               </h1>
               <p className="text-xs font-bold text-slate-600 dark:text-slate-400 mt-1">
-                กรอกรหัสห้อง วางลิงก์ที่เพื่อนส่งมา หรือเลือกก๊วนแบดด้านล่างได้เลยฮะ!
+                วางลิงก์ที่เพื่อนส่งมาใน LINE เพื่อไปหน้าสแกนจ่ายเงินได้ทันทีฮะ!
               </p>
             </header>
 
             {/* Error Alert */}
-            {joinError && (
+            {codeSearchError && (
               <div className="p-4 rounded-2xl bg-[#FFEBEE] dark:bg-[#3b1219] border-3 border-[#E53935] text-[#C62828] dark:text-[#ff8a80] text-xs sm:text-sm font-bold flex items-start gap-3 shadow-[4px_4px_0px_#0f172a] dark:shadow-[4px_4px_0px_#000]">
                 <AlertCircle className="w-5 h-5 shrink-0 text-[#E53935] mt-0.5" />
                 <div className="flex-1">
-                  <span className="underline">ข้อผิดพลาด:</span> {joinError}
+                  <span className="underline">ข้อผิดพลาด:</span> {codeSearchError}
                 </div>
                 <button
                   type="button"
-                  onClick={() => setJoinError(null)}
+                  onClick={() => setCodeSearchError(null)}
                   className="text-slate-600 dark:text-slate-300 hover:text-black dark:hover:text-white cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -712,22 +965,22 @@ export default function HomePage() {
                 <div className="w-7 h-7 rounded-xl bg-[#43A047] flex items-center justify-center text-white border-2 border-slate-900">
                   <QrCode className="w-4 h-4" />
                 </div>
-                <span>วางลิงก์ห้อง หรือกรอกรหัสห้อง (Room ID)</span>
+                <span>วางลิงก์ห้อง หรือกรอกรหัสห้อง (Room ID / Code)</span>
               </div>
 
-              <form onSubmit={handleJoinSubmit} className="space-y-3">
+              <form onSubmit={handleSearchRoomCode} className="space-y-3">
                 <div className="relative">
                   <input
                     type="text"
-                    value={joinInput}
-                    onChange={(e) => setJoinInput(e.target.value)}
+                    value={roomCodeInput}
+                    onChange={(e) => setRoomCodeInput(e.target.value)}
                     placeholder="วางลิงก์ห้อง เช่น .../room/... หรือใส่รหัสห้อง"
                     className="w-full px-4 py-3.5 pr-10 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#43A047] transition-all text-xs sm:text-sm"
                   />
-                  {joinInput && (
+                  {roomCodeInput && (
                     <button
                       type="button"
-                      onClick={() => setJoinInput("")}
+                      onClick={() => setRoomCodeInput("")}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 cursor-pointer"
                     >
                       <X className="w-4 h-4" />
@@ -737,10 +990,10 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  disabled={isJoining || !joinInput.trim()}
+                  disabled={isSearchingCode || !roomCodeInput.trim()}
                   className="w-full py-3.5 px-4 rounded-2xl bg-[#43A047] hover:bg-[#388E3C] text-white font-black text-sm sm:text-base border-3 border-slate-900 shadow-[4px_4px_0px_#0f172a] hover:shadow-[5px_5px_0px_#0f172a] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  {isJoining ? (
+                  {isSearchingCode ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
                       <span>กำลังตรวจสอบห้อง...</span>
@@ -753,138 +1006,6 @@ export default function HomePage() {
                   )}
                 </button>
               </form>
-            </div>
-
-            {/* Card: Recent Rooms from LocalStorage */}
-            {recentRooms.length > 0 && (
-              <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-sm">
-                    <History className="w-4 h-4 text-[#43A047]" />
-                    <span>ก๊วนแบดล่าสุดที่คุณเคยเข้า</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleClearRecentRooms}
-                    className="text-[11px] font-bold text-slate-400 hover:text-[#E53935] transition-colors cursor-pointer"
-                  >
-                    ล้างประวัติ
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  {recentRooms.map((r) => (
-                    <div
-                      key={r.id}
-                      onClick={() => router.push(`/room/${r.id}`)}
-                      className="p-3.5 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-700 hover:border-[#43A047] dark:hover:border-emerald-400 shadow-[2px_2px_0px_#0f172a] dark:shadow-none transition-all cursor-pointer flex items-center justify-between group"
-                    >
-                      <div className="min-w-0 flex-1 pr-3">
-                        <p className="text-xs font-black text-slate-950 dark:text-white truncate group-hover:text-[#43A047] dark:group-hover:text-emerald-400 transition-colors">
-                          {r.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                          {r.per_person_fee ? (
-                            <span className="text-[#2E7D32] dark:text-emerald-400">
-                              ฿{r.per_person_fee}/คน
-                            </span>
-                          ) : r.total_fee ? (
-                            <span>ยอดรวม ฿{r.total_fee}</span>
-                          ) : null}
-                          {r.visited_at && (
-                            <span>
-                              • {new Date(r.visited_at).toLocaleDateString("th-TH", {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="px-3 py-1.5 rounded-xl bg-[#43A047] text-white text-xs font-black border-2 border-slate-900 shadow-[2px_2px_0px_#0f172a] shrink-0 group-hover:bg-[#388E3C] transition-colors flex items-center gap-1">
-                        <span>เข้าห้อง</span>
-                        <ArrowRight className="w-3.5 h-3.5 stroke-[3]" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Card: Active Public Rooms from Supabase */}
-            <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-sm">
-                  <Users className="w-4 h-4 text-[#FDD835]" />
-                  <span>ก๊วนแบดที่เพิ่งเปิดล่าสุดในระบบ</span>
-                </div>
-                <span className="text-[10px] font-bold text-slate-400">
-                  {filteredPublicRooms.length} ห้อง
-                </span>
-              </div>
-
-              {/* Search Filter Box */}
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="ค้นหาก๊วนตามชื่อห้อง..."
-                  className="w-full pl-9 pr-4 py-2 bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-600 rounded-xl text-slate-950 dark:text-white font-bold placeholder-slate-400 text-xs focus:outline-none focus:ring-1 focus:ring-[#43A047]"
-                />
-              </div>
-
-              {isLoadingPublicRooms ? (
-                <div className="py-6 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#43A047]" />
-                  <span>กำลังค้นหาก๊วนแบด...</span>
-                </div>
-              ) : filteredPublicRooms.length > 0 ? (
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {filteredPublicRooms.map((r) => (
-                    <div
-                      key={r.id}
-                      onClick={() => router.push(`/room/${r.id}`)}
-                      className="p-3 rounded-2xl bg-[#FFFDF0] dark:bg-[#0f172a] border-2 border-slate-900 dark:border-slate-700 hover:border-[#43A047] dark:hover:border-emerald-400 shadow-[2px_2px_0px_#0f172a] dark:shadow-none transition-all cursor-pointer flex items-center justify-between group"
-                    >
-                      <div className="min-w-0 flex-1 pr-3">
-                        <p className="text-xs font-black text-slate-950 dark:text-white truncate group-hover:text-[#43A047] dark:group-hover:text-emerald-400 transition-colors">
-                          {r.title}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                          {r.per_person_fee ? (
-                            <span className="text-[#2E7D32] dark:text-emerald-400">
-                              ฿{r.per_person_fee}/คน
-                            </span>
-                          ) : r.total_fee ? (
-                            <span>ยอดรวม ฿{r.total_fee}</span>
-                          ) : null}
-                          {r.created_at && (
-                            <span>
-                              • {new Date(r.created_at).toLocaleDateString("th-TH", {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="px-2.5 py-1 rounded-xl bg-white dark:bg-[#1a2234] text-slate-900 dark:text-white text-[11px] font-black border-2 border-slate-900 group-hover:bg-[#43A047] group-hover:text-white transition-colors shrink-0 shadow-[1px_1px_0px_#0f172a]">
-                        เข้าร่วม ➔
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-4 text-center text-xs font-bold text-slate-400">
-                  {searchQuery
-                    ? "ไม่พบก๊วนที่ตรงกับคำค้นหาฮะ"
-                    : "ยังไม่มีก๊วนที่เปิดล่าสุดฮะ"}
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -949,7 +1070,7 @@ export default function HomePage() {
 
             {/* Main Form */}
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Section 1: Room Details */}
+              {/* Section 1: Room Details & Generated Room Code */}
               <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-3 border-slate-900 dark:border-slate-700 shadow-[5px_5px_0px_0px_#0f172a] dark:shadow-[5px_5px_0px_0px_#000] space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-slate-950 dark:text-white font-black text-base">
@@ -975,6 +1096,29 @@ export default function HomePage() {
                     placeholder="เช่น ก๊วนชินจังวันศุกร์ สนาม Winner คอร์ท 3-4"
                     className="w-full px-4 py-3 bg-[#FFFDF0] dark:bg-[#0f172a] border-3 border-slate-900 dark:border-slate-600 rounded-2xl text-slate-950 dark:text-white font-bold placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#E53935] transition-all text-sm"
                   />
+                </div>
+
+                {/* Generated Room Code Feature */}
+                <div className="p-3 rounded-2xl bg-[#FFF9C4] dark:bg-yellow-950/60 border-2 border-slate-900 dark:border-yellow-400/60 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-700 dark:text-yellow-300 flex items-center gap-1">
+                      <KeyRound className="w-3.5 h-3.5 text-[#E53935]" />
+                      <span>รหัสห้องสำหรับให้เพื่อนค้นหา (Room Code)</span>
+                    </div>
+                    <div className="font-mono text-base font-black text-slate-950 dark:text-yellow-200 mt-0.5">
+                      {generatedCode}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedCode(generateRoomCode())}
+                    title="สุ่มรหัสใหม่"
+                    className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#1a2234] border-2 border-slate-900 text-xs font-black text-slate-900 dark:text-white hover:bg-yellow-100 flex items-center gap-1 shrink-0 shadow-[1px_1px_0px_#0f172a] cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>สุ่มใหม่</span>
+                  </button>
                 </div>
               </div>
 
@@ -1293,7 +1437,7 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-black text-slate-950 dark:text-white truncate">
+                      <p className="text-xs font-black text-slate-900 dark:text-white truncate">
                         {qrFile?.name || "Host PromptPay QR"}
                       </p>
                       <p className="text-[11px] font-bold text-[#2E7D32] dark:text-emerald-300 flex items-center gap-1 mt-0.5">
@@ -1369,7 +1513,7 @@ export default function HomePage() {
                   ) : (
                     <>
                       <span>สร้างห้องก๊วนแบดเลยฮะ!</span>
-                      <ArrowRight className="w-4 h-4 stroke-[3]" />
+                      <ArrowRight className="w-5 h-5 stroke-[3]" />
                     </>
                   )}
                 </button>

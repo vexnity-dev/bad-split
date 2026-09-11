@@ -38,6 +38,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { Room, Member } from "@/types/database";
 import { ShuttleIcon } from "@/components/ShuttleIcon";
+import { getDisplayRoomCode } from "@/lib/roomCode";
 import {
   ShinchanAvatar,
   HimawariAvatar,
@@ -92,6 +93,7 @@ export default function RoomPage() {
   const [copiedAmount, setCopiedAmount] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedLineSummary, setCopiedLineSummary] = useState(false);
+  const [copiedRoomCode, setCopiedRoomCode] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -548,6 +550,20 @@ export default function RoomPage() {
     }
   };
 
+  const displayRoomCode = room ? getDisplayRoomCode(room) : "";
+
+  // Copy Room Code to clipboard
+  const handleCopyRoomCode = async () => {
+    if (!displayRoomCode) return;
+    try {
+      await navigator.clipboard.writeText(displayRoomCode);
+      setCopiedRoomCode(true);
+      setTimeout(() => setCopiedRoomCode(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy room code:", err);
+    }
+  };
+
   // Copy Room Link to clipboard
   const handleCopyLink = async () => {
     try {
@@ -569,11 +585,12 @@ export default function RoomPage() {
 
       const text = [
         `🏸 สรุปยอดก๊วนแบด: ${cleanTitle}`,
+        `🔑 รหัสห้อง: ${displayRoomCode}`,
         `💰 ยอดโอนคนละ: ${perPersonAmount.toLocaleString()} บาท`,
         `📊 เก็บได้แล้ว: ฿${collectedAmount.toLocaleString()} / ฿${totalRoomFee.toLocaleString()} (${paidMembersCount} คน)`,
         paidNames ? `\n✅ คนที่โอนแล้ว (รอดตัวแล้วฮะ):\n${paidNames}` : "\n⏳ ยังไม่มีคนแจ้งโอน (ระวังโดนเขกหัวนะ!)",
         room.host_notes ? `\n📌 โน้ตจากหัวห้อง:\n${room.host_notes}` : "",
-        `\n🔗 กดเพื่อดู QR Code พร้อมเพย์ และส่งสลิปที่นี่:`,
+        `\n🔗 เข้าเว็บแล้วใส่รหัส "${displayRoomCode}" หรือกดลิงก์นี้:`,
         window.location.href,
       ].filter(Boolean).join("\n");
 
@@ -705,6 +722,16 @@ export default function RoomPage() {
           </div>
         )}
 
+        {/* Room Code Copied Toast */}
+        {copiedRoomCode && (
+          <div className="p-3 rounded-2xl bg-[#E8F5E9] dark:bg-emerald-950 border-3 border-[#43A047] dark:border-emerald-400 text-slate-950 dark:text-emerald-200 text-xs font-black shadow-[3px_3px_0px_#0f172a] flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+            <Check className="w-4 h-4 text-[#2E7D32] dark:text-emerald-400 shrink-0" />
+            <span>
+              โป๊ก! คัดลอกรหัสห้อง <span className="font-mono underline text-sm">{displayRoomCode}</span> แล้วฮะ! บอกเพื่อนในคอร์ทพิมพ์รหัสนี้ที่หน้าเว็บได้เลย! 🌟
+            </span>
+          </div>
+        )}
+
         {/* Room Header Comic Card */}
         <div className="bg-white dark:bg-[#1a2234] rounded-3xl p-5 border-4 border-slate-900 dark:border-slate-700 shadow-[6px_6px_0px_0px_#0f172a] dark:shadow-[6px_6px_0px_0px_#000] relative overflow-hidden">
           <div className="flex items-start justify-between gap-3">
@@ -714,6 +741,27 @@ export default function RoomPage() {
                   <ShuttleIcon className="w-3.5 h-3.5" />
                   <span>ก๊วนแบดมินตัน</span>
                 </div>
+                {/* Room Code Badge */}
+                <button
+                  type="button"
+                  onClick={handleCopyRoomCode}
+                  title="กดเพื่อคัดลอกรหัสห้อง"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E8F5E9] dark:bg-emerald-950 border-2 border-slate-900 dark:border-emerald-400 text-slate-950 dark:text-emerald-200 text-xs font-black shadow-[2px_2px_0px_#0f172a] hover:bg-[#C8E6C9] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer group"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-[#2E7D32] dark:text-emerald-400" />
+                  <span>รหัสห้อง:</span>
+                  <span className="font-mono tracking-wider text-xs bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-400 dark:border-emerald-400 text-[#2E7D32] dark:text-emerald-300 font-black">
+                    {displayRoomCode}
+                  </span>
+                  {copiedRoomCode ? (
+                    <span className="text-[10px] text-[#2E7D32] dark:text-emerald-300 font-black flex items-center gap-0.5">
+                      <Check className="w-3 h-3" />
+                      คัดลอกแล้ว!
+                    </span>
+                  ) : (
+                    <Copy className="w-3 h-3 text-slate-500 group-hover:text-black dark:group-hover:text-white" />
+                  )}
+                </button>
                 {targetPlayers > 0 && (
                   <span className="text-xs font-black text-white bg-[#E53935] border-2 border-slate-900 px-3 py-1 rounded-full shadow-[2px_2px_0px_#0f172a] dark:shadow-none">
                     เป้าหมาย {targetPlayers} คน
